@@ -36,7 +36,6 @@ Provider list ada di `providers/registry.py` jika perlu menambah/ubah.
 ## Run
 
 ```bash
-cd ~/LATIHAN/ai_config_manager
 uv sync
 uv run python manage.py migrate
 uv run python manage.py runserver
