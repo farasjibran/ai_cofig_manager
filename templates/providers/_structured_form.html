@@ -1,0 +1,376 @@
+{% if not structured.has_structured %}
+  <div class="px-4 py-6 text-sm text-slate-500">
+    No structured fields defined for this provider yet. Use the Raw tab.
+  </div>
+{% elif structured.parse_error %}
+  <div class="px-4 py-6 text-sm text-rose-700 bg-rose-50 border-t border-rose-100">
+    Cannot show structured form: {{ structured.parse_error }}.<br />
+    Fix the raw editor first and save.
+  </div>
+{% else %}
+{% if structured.jsonc_warning %}
+<div class="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+  This file contains <code>//</code> or <code>/* */</code> comments (JSONC). Saving from the structured form will <strong>strip those comments</strong>.
+</div>
+{% endif %}
+
+<form method="post" action="{% url 'provider_structured_save' provider.key %}"
+      class="divide-y divide-slate-100"
+      x-data="structuredForm({ diffUrl: '{% url 'provider_structured_diff' provider.key %}', csrf: '{{ csrf_token }}' })">
+  {% csrf_token %}
+
+  {% if structured.field_rows %}
+  <div class="px-4 py-4">
+    <h3 class="mb-3 text-sm font-semibold text-slate-800">Fields</h3>
+    <div class="grid gap-3 sm:grid-cols-2">
+      {% for row in structured.field_rows %}
+      <div>
+        <label class="block text-xs font-medium text-slate-700">{{ row.spec.label }}</label>
+        <div class="text-[10px] font-mono text-slate-400">{{ row.path_label }}</div>
+        {% if row.spec.kind == "select" %}
+          <select name="field_{{ row.index }}"
+                  class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm shadow-sm">
+            {% for opt in row.options %}
+              <option value="{{ opt }}" {% if row.value == opt %}selected{% endif %}>{{ opt|default:"— none —" }}</option>
+            {% endfor %}
+          </select>
+        {% elif row.spec.kind == "password" %}
+          <div class="relative mt-1" x-data="{ show: false }">
+            <input :type="show ? 'text' : 'password'" name="field_{{ row.index }}" value="{{ row.value }}"
+                   placeholder="{{ row.spec.placeholder }}" autocomplete="off"
+                   class="w-full rounded-md border-slate-300 bg-white px-2 py-1.5 pr-12 text-sm font-mono shadow-sm" />
+            <button type="button" @click="show = !show"
+                    class="absolute inset-y-0 right-1 my-auto h-6 rounded-md bg-slate-100 px-2 text-[11px] font-medium text-slate-700 hover:bg-slate-200"
+                    x-text="show ? 'Hide' : 'Show'"></button>
+          </div>
+        {% else %}
+          <input type="text" name="field_{{ row.index }}" value="{{ row.value }}"
+                 placeholder="{{ row.spec.placeholder }}"
+                 class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if structured.schema.has_env_editor %}
+  <div class="px-4 py-4">
+    <div class="mb-2 flex items-center justify-between">
+      <h3 class="text-sm font-semibold text-slate-800">Environment variables</h3>
+      <button type="button" @click="addEnvRow($refs.envBody)"
+              class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50">+ Add row</button>
+    </div>
+    <div x-ref="envBody" class="space-y-2">
+      {% for row in structured.env_rows %}
+      <div class="flex items-center gap-2" x-data="{ show: {% if row.secret %}false{% else %}true{% endif %}, secret: {{ row.secret|yesno:'true,false' }} }">
+        <input name="env_key" value="{{ row.key }}" placeholder="KEY"
+               @input="secret = isSecretKey($el.value); if (!secret) show = true"
+               class="w-1/3 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+        <div class="grow relative">
+          <input name="env_value" value="{{ row.value }}" placeholder="value"
+                 :type="(secret && !show) ? 'password' : 'text'"
+                 autocomplete="off"
+                 class="w-full rounded-md border-slate-300 bg-white px-2 py-1 pr-12 text-sm font-mono" />
+          <button type="button" x-show="secret" @click="show = !show"
+                  class="absolute inset-y-0 right-1 my-auto h-6 rounded-md bg-slate-100 px-2 text-[11px] font-medium text-slate-700 hover:bg-slate-200"
+                  x-text="show ? 'Hide' : 'Show'"></button>
+        </div>
+        <button type="button" @click="$root.removeEnvRow($event)"
+                class="rounded-md border border-rose-200 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-50">×</button>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if structured.schema.has_qwen_model_providers %}
+  <div class="px-4 py-4">
+    <div class="mb-2 flex items-center justify-between">
+      <h3 class="text-sm font-semibold text-slate-800">Model providers (Qwen openai array)</h3>
+      <button type="button" @click="addQwenRow($refs.qwenBody)"
+              class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50">+ Add provider</button>
+    </div>
+    <div x-ref="qwenBody" class="space-y-2">
+      {% for row in structured.qwen_rows %}
+      <div class="grid grid-cols-12 items-center gap-2">
+        <input name="mp_id" value="{{ row.id }}" placeholder="id" class="col-span-3 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+        <input name="mp_name" value="{{ row.name }}" placeholder="name" class="col-span-3 rounded-md border-slate-300 bg-white px-2 py-1 text-sm" />
+        <input name="mp_baseUrl" value="{{ row.baseUrl }}" placeholder="baseUrl" class="col-span-4 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+        <input name="mp_envKey" value="{{ row.envKey }}" placeholder="envKey" class="col-span-1 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+        <button type="button" @click="$el.closest('div').remove()"
+                class="col-span-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-50">×</button>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if structured.schema.has_opencode_providers %}
+  <div class="px-4 py-4" x-data='opencodeProviders({ initial: {{ structured.opencode_providers_json|safe }} })'>
+    <div class="mb-2 flex items-center justify-between">
+      <h3 class="text-sm font-semibold text-slate-800">AI Providers</h3>
+      <button type="button" @click="addProvider()"
+              class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50">+ Add provider</button>
+    </div>
+    <input type="hidden" name="opencode_providers_json" :value="JSON.stringify(items)" />
+    <div class="space-y-3">
+      <template x-for="(p, idx) in items" :key="idx">
+        <div class="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <div class="grid grid-cols-12 items-center gap-2">
+            <input x-model="p.id" placeholder="provider id (e.g. agentrouter_deepseek)"
+                   class="col-span-3 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+            <input x-model="p.name" placeholder="display name"
+                   class="col-span-3 rounded-md border-slate-300 bg-white px-2 py-1 text-sm" />
+            <input x-model="p.npm" placeholder="npm package (e.g. @ai-sdk/openai-compatible)"
+                   class="col-span-5 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+            <button type="button" @click="items.splice(idx,1)"
+                    class="col-span-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-50">×</button>
+          </div>
+          <div class="mt-2 grid grid-cols-12 items-center gap-2">
+            <input x-model="p.baseUrl" placeholder="baseURL"
+                   class="col-span-6 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+            <div class="col-span-6 relative" x-data="{ show: false }">
+              <input :type="show ? 'text' : 'password'" x-model="p.authHeader"
+                     placeholder="Authorization header (e.g. Bearer ...)" autocomplete="off"
+                     class="w-full rounded-md border-slate-300 bg-white px-2 py-1 pr-12 text-sm font-mono" />
+              <button type="button" @click="show = !show"
+                      class="absolute inset-y-0 right-1 my-auto h-6 rounded-md bg-slate-100 px-2 text-[11px] font-medium text-slate-700 hover:bg-slate-200"
+                      x-text="show ? 'Hide' : 'Show'"></button>
+            </div>
+          </div>
+          <div class="mt-3">
+            <div class="mb-1 flex items-center justify-between">
+              <span class="text-xs font-medium text-slate-600">Models</span>
+              <button type="button" @click="p.models.push({id:'',name:''})"
+                      class="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-xs hover:bg-slate-50">+ Add model</button>
+            </div>
+            <div class="space-y-1">
+              <template x-for="(m, mi) in p.models" :key="mi">
+                <div class="grid grid-cols-12 items-center gap-2">
+                  <input x-model="m.id" placeholder="model id"
+                         class="col-span-5 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+                  <input x-model="m.name" placeholder="model display name"
+                         class="col-span-6 rounded-md border-slate-300 bg-white px-2 py-1 text-sm" />
+                  <button type="button" @click="p.models.splice(mi,1)"
+                          class="col-span-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-50">×</button>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if structured.schema.has_claude_permissions %}
+  <div class="px-4 py-4">
+    <h3 class="mb-3 text-sm font-semibold text-slate-800">Permissions</h3>
+    <div class="grid gap-4 md:grid-cols-2">
+      <div>
+        <div class="mb-1 flex items-center justify-between">
+          <span class="text-xs font-medium text-emerald-700">Allow</span>
+          <button type="button" @click="addRow($refs.allowBody, ['perm_allow'], ['e.g. Bash(git *)'])"
+                  class="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-xs hover:bg-slate-50">+ Add</button>
+        </div>
+        <div x-ref="allowBody" class="space-y-1">
+          {% for rule in structured.claude_allow %}
+          <div class="flex items-center gap-2">
+            <input name="perm_allow" value="{{ rule }}"
+                   class="grow rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+            <button type="button" @click="$el.closest('div').remove()"
+                    class="rounded-md border border-rose-200 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-50">×</button>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      <div>
+        <div class="mb-1 flex items-center justify-between">
+          <span class="text-xs font-medium text-rose-700">Deny</span>
+          <button type="button" @click="addRow($refs.denyBody, ['perm_deny'], ['e.g. Bash(rm -rf *)'])"
+                  class="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-xs hover:bg-slate-50">+ Add</button>
+        </div>
+        <div x-ref="denyBody" class="space-y-1">
+          {% for rule in structured.claude_deny %}
+          <div class="flex items-center gap-2">
+            <input name="perm_deny" value="{{ rule }}"
+                   class="grow rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+            <button type="button" @click="$el.closest('div').remove()"
+                    class="rounded-md border border-rose-200 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-50">×</button>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if structured.schema.has_claude_hooks %}
+  <div class="px-4 py-4">
+    <div class="mb-2 flex items-center justify-between">
+      <h3 class="text-sm font-semibold text-slate-800">Hooks</h3>
+      <span class="text-[11px] text-slate-500">JSON object: keys like <code>PreToolUse</code>, <code>SessionStart</code>, <code>PostToolUse</code></span>
+    </div>
+    <textarea name="claude_hooks_json" rows="10" spellcheck="false"
+              class="w-full rounded-md border-slate-300 bg-slate-950 px-3 py-2 font-mono text-xs text-slate-100 shadow-sm focus:outline-none focus:ring-1 focus:ring-slate-500">{{ structured.claude_hooks_json }}</textarea>
+    <p class="mt-1 text-[11px] text-slate-500">Leave empty to remove the <code>hooks</code> key.</p>
+  </div>
+  {% endif %}
+
+  <div class="flex flex-wrap items-center gap-3 bg-slate-50 px-4 py-3">
+    <button type="submit"
+            class="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">
+      Save structured changes
+    </button>
+    <button type="button" @click="previewDiff($el.closest('form'))"
+            class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50">
+      Preview diff
+    </button>
+    <label class="flex items-center gap-1.5 text-sm text-slate-700">
+      <input type="checkbox" name="create_backup" checked class="rounded border-slate-300" />
+      Backup before save
+    </label>
+    <span class="text-xs text-slate-500">Other keys in the file are preserved. Empty fields are removed.</span>
+  </div>
+
+  <!-- Diff modal -->
+  <div x-show="diffOpen" x-cloak
+       class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+       @keydown.escape.window="diffOpen=false">
+    <div class="flex max-h-[85vh] w-full max-w-4xl flex-col rounded-lg bg-white shadow-xl">
+      <div class="flex items-center justify-between border-b px-4 py-3">
+        <div>
+          <h3 class="text-sm font-semibold">Diff preview</h3>
+          <p class="text-xs text-slate-500" x-text="diffStatus"></p>
+        </div>
+        <button type="button" @click="diffOpen=false"
+                class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50">Close</button>
+      </div>
+      <pre class="flex-1 overflow-auto bg-slate-950 p-4 font-mono text-xs text-slate-100"
+           x-html="diffHtml"></pre>
+    </div>
+  </div>
+</form>
+
+<script>
+  function structuredForm(opts) {
+    return {
+      diffOpen: false,
+      diffHtml: '',
+      diffStatus: '',
+      _opts: opts,
+      _secretHints: ['key', 'token', 'secret', 'password', 'auth', 'api_key', 'apikey'],
+      isSecretKey(name) {
+        const k = (name || '').toLowerCase();
+        return this._secretHints.some(h => k.includes(h));
+      },
+      removeEnvRow(ev) {
+        ev.target.closest('div.flex').remove();
+      },
+      addEnvRow(body) {
+        const wrap = document.createElement('div');
+        wrap.className = 'flex items-center gap-2';
+        wrap.setAttribute('x-data', "{ show: true, secret: false }");
+        wrap.innerHTML = `
+          <input name="env_key" placeholder="KEY"
+                 @input="secret = $root.isSecretKey($el.value); if (!secret) show = true"
+                 class="w-1/3 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+          <div class="grow relative">
+            <input name="env_value" placeholder="value"
+                   :type="(secret && !show) ? 'password' : 'text'"
+                   autocomplete="off"
+                   class="w-full rounded-md border-slate-300 bg-white px-2 py-1 pr-12 text-sm font-mono" />
+            <button type="button" x-show="secret" @click="show = !show"
+                    class="absolute inset-y-0 right-1 my-auto h-6 rounded-md bg-slate-100 px-2 text-[11px] font-medium text-slate-700 hover:bg-slate-200"
+                    x-text="show ? 'Hide' : 'Show'"></button>
+          </div>
+          <button type="button" class="rounded-md border border-rose-200 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-50">×</button>`;
+        wrap.querySelector('button:last-child').addEventListener('click', () => wrap.remove());
+        body.appendChild(wrap);
+      },
+      addRow(body, names, placeholders) {
+        const div = document.createElement('div');
+        div.className = 'flex items-center gap-2';
+        div.innerHTML = names.map((n, i) => {
+          const cls = i === 0 && names.length > 1
+            ? 'w-1/3 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono'
+            : 'grow rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono';
+          return `<input name="${n}" placeholder="${placeholders[i]}" class="${cls}" />`;
+        }).join('') + '<button type="button" class="rounded-md border border-rose-200 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-50">×</button>';
+        div.querySelector('button').addEventListener('click', () => div.remove());
+        body.appendChild(div);
+      },
+      addQwenRow(body) {
+        const div = document.createElement('div');
+        div.className = 'grid grid-cols-12 items-center gap-2';
+        div.innerHTML = `
+          <input name="mp_id" placeholder="id" class="col-span-3 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+          <input name="mp_name" placeholder="name" class="col-span-3 rounded-md border-slate-300 bg-white px-2 py-1 text-sm" />
+          <input name="mp_baseUrl" placeholder="baseUrl" class="col-span-4 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+          <input name="mp_envKey" placeholder="envKey" class="col-span-1 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+          <button type="button" class="col-span-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-50">×</button>`;
+        div.querySelector('button').addEventListener('click', () => div.remove());
+        body.appendChild(div);
+      },
+      async previewDiff(formEl) {
+        const fd = new FormData(formEl);
+        try {
+          const res = await fetch(this._opts.diffUrl, {
+            method: 'POST',
+            body: fd,
+            headers: { 'X-CSRFToken': this._opts.csrf },
+          });
+          const data = await res.json();
+          if (!data.ok) {
+            this.diffStatus = 'error: ' + data.message;
+            this.diffHtml = '';
+          } else if (data.unchanged) {
+            this.diffStatus = 'No changes';
+            this.diffHtml = '<span class="text-slate-400">No changes vs disk.</span>';
+          } else {
+            this.diffStatus = 'Changes detected';
+            this.diffHtml = colorizeDiff(data.diff);
+          }
+          this.diffOpen = true;
+        } catch (err) {
+          this.diffStatus = 'request failed';
+          this.diffHtml = '';
+          this.diffOpen = true;
+        }
+      },
+    };
+  }
+
+  function opencodeProviders(opts) {
+    return {
+      items: (opts.initial || []).map(p => ({
+        id: p.id || '', name: p.name || '', npm: p.npm || '',
+        baseUrl: p.baseUrl || '', authHeader: p.authHeader || '',
+        models: (p.models || []).map(m => ({ id: m.id || '', name: m.name || '' })),
+      })),
+      addProvider() {
+        this.items.push({ id: '', name: '', npm: '@ai-sdk/openai-compatible',
+                          baseUrl: '', authHeader: '', models: [] });
+      },
+    };
+  }
+
+  function colorizeDiff(text) {
+    const esc = (s) => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    return text.split('\n').map(line => {
+      const e = esc(line);
+      if (line.startsWith('+++') || line.startsWith('---'))
+        return `<span class="text-slate-400">${e}</span>`;
+      if (line.startsWith('@@'))
+        return `<span class="text-sky-300">${e}</span>`;
+      if (line.startsWith('+'))
+        return `<span class="text-emerald-300">${e}</span>`;
+      if (line.startsWith('-'))
+        return `<span class="text-rose-300">${e}</span>`;
+      return `<span class="text-slate-300">${e}</span>`;
+    }).join('\n');
+  }
+</script>
+
+{% endif %}

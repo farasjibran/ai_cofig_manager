@@ -1,0 +1,477 @@
+{% extends "base.html" %}
+{% block title %}{{ provider.name }} · AI Config Manager{% endblock %}
+
+{% block content %}
+<div class="mb-4 flex items-start justify-between gap-4"
+     x-data='detailPage({
+        sigUrl: "{% url "provider_signature" provider.key %}",
+        testUrl: "{% url "provider_test_connection" provider.key %}",
+        initialSig: {{ file_sig.mtime }},
+        initialSize: {{ file_sig.size }}
+     })'
+     x-init="startWatching()">
+  <div>
+    <div class="text-xs uppercase tracking-wide text-slate-500">Provider</div>
+    <h1 class="text-2xl font-semibold">{{ provider.name }}</h1>
+    <p class="mt-1 text-sm text-slate-600">{{ provider.description }}</p>
+    <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+      <code class="rounded bg-slate-100 px-2 py-1 font-mono text-slate-700">{{ provider.display_path }}</code>
+      <span class="rounded bg-slate-100 px-1.5 py-0.5 font-mono uppercase text-slate-600">{{ provider.format }}</span>
+      {% if provider.exists %}
+        <span class="rounded bg-emerald-50 px-2 py-0.5 text-emerald-700">on disk</span>
+      {% else %}
+        <span class="rounded bg-amber-50 px-2 py-0.5 text-amber-700">file missing</span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="flex flex-col items-end gap-2">
+    <a href="{% url 'provider_index' %}" class="text-sm text-slate-600 hover:text-slate-900">← Back</a>
+    <button type="button" @click="runTest()" :disabled="testing"
+            class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50">
+      <span x-show="!testing">Test connection</span>
+      <span x-show="testing">Testing…</span>
+    </button>
+  </div>
+</div>
+
+<!-- External change banner -->
+<div x-show="externalChanged" x-cloak
+     class="mb-4 flex items-center justify-between rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+  <span>
+    File changed on disk at <span x-text="changedAt"></span>. Reload to avoid overwriting external changes.
+  </span>
+  <div class="flex items-center gap-2">
+    <a href="{% url 'provider_detail' provider.key %}"
+       class="rounded-md border border-amber-400 bg-white px-2 py-1 text-xs hover:bg-amber-100">Reload</a>
+    <button type="button" @click="externalChanged = false"
+            class="rounded-md border border-amber-300 bg-white px-2 py-1 text-xs hover:bg-amber-100">Dismiss</button>
+  </div>
+</div>
+
+<!-- Connection test results panel -->
+<div x-show="testResults.length" x-cloak
+     class="mb-4 rounded-md border border-slate-200 bg-white shadow-sm">
+  <div class="flex items-center justify-between border-b border-slate-200 px-4 py-2">
+    <span class="text-sm font-semibold">Connection test results</span>
+    <button type="button" @click="testResults = []"
+            class="text-xs text-slate-500 hover:text-slate-900">Clear</button>
+  </div>
+  <div class="divide-y divide-slate-100">
+    <template x-for="r in testResults" :key="r.label + r.url">
+      <div class="flex items-center gap-3 px-4 py-2 text-xs">
+        <span class="rounded px-1.5 py-0.5 font-mono uppercase"
+              :class="{
+                'bg-emerald-100 text-emerald-800': r.status === 'ok',
+                'bg-rose-100 text-rose-800': r.status === 'error' || r.status === 'auth_failed',
+                'bg-slate-100 text-slate-600': r.status === 'skipped',
+              }"
+              x-text="r.status"></span>
+        <span class="font-mono font-medium" x-text="r.label"></span>
+        <span class="font-mono text-slate-400 truncate" x-text="r.url"></span>
+        <span class="ml-auto text-slate-500" x-text="r.message"></span>
+        <span x-show="r.latency_ms" class="text-slate-400 font-mono" x-text="r.latency_ms + 'ms'"></span>
+      </div>
+    </template>
+  </div>
+</div>
+
+<div x-data="{ tab: '{% if structured.has_structured and not structured.parse_error %}structured{% else %}raw{% endif %}' }"
+     class="space-y-6">
+
+  {# tabs #}
+  <div class="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm w-fit">
+    <button type="button" @click="tab = 'structured'"
+            :class="tab === 'structured' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'"
+            class="rounded-md px-3 py-1.5 text-sm font-medium transition">
+      Structured
+    </button>
+    <button type="button" @click="tab = 'raw'"
+            :class="tab === 'raw' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'"
+            class="rounded-md px-3 py-1.5 text-sm font-medium transition">
+      Raw
+    </button>
+  </div>
+
+  <!-- Structured form -->
+  <div x-show="tab === 'structured'" class="rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div class="border-b border-slate-200 px-4 py-3">
+      <h2 class="text-sm font-semibold text-slate-800">Structured editor</h2>
+      <p class="text-xs text-slate-500">Edit named fields and lists. Other keys in the file are preserved on save.</p>
+    </div>
+    {% include "providers/_structured_form.html" %}
+  </div>
+
+  <!-- Raw editor -->
+  <div x-show="tab === 'raw'" class="rounded-lg border border-slate-200 bg-white shadow-sm"
+       x-data="editor({
+        format: '{{ provider.format }}',
+        validateUrl: '{% url 'provider_validate' provider.key %}',
+        diffUrl: '{% url 'provider_diff' provider.key %}',
+        csrfToken: '{{ csrf_token }}',
+      })"
+     x-init="init()">
+
+    {# hidden sources for raw/masked content (server-rendered) #}
+    <textarea x-ref="rawSource" class="hidden">{{ raw_text }}</textarea>
+    <textarea x-ref="maskedSource" class="hidden">{{ masked_preview }}</textarea>
+
+    <form method="post" class="flex flex-col">
+      {% csrf_token %}
+
+      <div class="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-3">
+        <button type="submit"
+                class="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">
+          Save
+        </button>
+
+        <label class="ml-2 flex items-center gap-1.5 text-sm text-slate-700">
+          <input type="checkbox" name="create_backup" checked class="rounded border-slate-300" />
+          Backup before save
+        </label>
+
+        <button type="button" @click="validateNow()"
+                class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50">
+          Validate
+        </button>
+
+        <span class="text-xs"
+              :class="status === 'ok' ? 'text-emerald-600'
+                    : status === 'error' ? 'text-rose-600'
+                    : 'text-slate-500'"
+              x-text="statusMessage"></span>
+
+        <div class="ml-auto flex flex-wrap items-center gap-2">
+          <label class="flex items-center gap-1.5 text-sm text-slate-700">
+            <input type="checkbox" x-model="masked" @change="toggleMasked()" class="rounded border-slate-300" />
+            Mask secrets
+          </label>
+
+          <a href="{% url 'provider_download' provider.key %}"
+             class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50">
+            Download
+          </a>
+
+          <button type="button" @click="previewDiff()"
+                  class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"
+                  title="Preview diff vs disk">
+            Diff
+          </button>
+
+          <button type="button" @click="format()"
+                  class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50"
+                  title="Pretty-print (JSON only)">
+            Format
+          </button>
+        </div>
+      </div>
+
+      {{ form.non_field_errors }}
+
+      <textarea x-ref="area"
+                name="content"
+                spellcheck="false"
+                :readonly="masked"
+                @input.debounce.400ms="validateNow()"
+                class="block min-h-[55vh] w-full resize-y border-0 bg-slate-950 px-4 py-3 font-mono text-sm text-slate-100 focus:outline-none focus:ring-0"
+                :class="masked ? 'opacity-90' : ''">{{ raw_text }}</textarea>
+
+      <div class="flex items-center justify-between border-t border-slate-200 px-4 py-2 text-xs text-slate-500">
+        <span x-show="masked" class="text-amber-600">Masked view is read-only. Untick to edit.</span>
+        <span x-show="!masked">Editing raw {{ provider.format|upper }}.</span>
+        <span class="font-mono" x-text="`${$refs.area ? $refs.area.value.length : 0} chars`"></span>
+      </div>
+    </form>
+
+    <!-- Diff modal for raw editor -->
+    <div x-show="diffOpen" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+         @keydown.escape.window="diffOpen=false">
+      <div class="flex max-h-[85vh] w-full max-w-4xl flex-col rounded-lg bg-white shadow-xl">
+        <div class="flex items-center justify-between border-b px-4 py-3">
+          <div>
+            <h3 class="text-sm font-semibold">Diff preview</h3>
+            <p class="text-xs text-slate-500" x-text="diffStatus"></p>
+          </div>
+          <button type="button" @click="diffOpen=false"
+                  class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50">Close</button>
+        </div>
+        <pre class="flex-1 overflow-auto bg-slate-950 p-4 font-mono text-xs text-slate-100"
+             x-html="diffHtml"></pre>
+      </div>
+    </div>
+    <div class="border-t border-slate-200 bg-slate-50 px-4 py-3">
+      <form method="post" action="{% url 'provider_template' provider.key %}" class="inline">
+        {% csrf_token %}
+        <button type="submit"
+                onclick="return confirm('Generate starter template? Existing file will be backed up first.')"
+                class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50">
+          Generate starter template
+        </button>
+      </form>
+      <span class="ml-2 text-xs text-slate-500">Useful when the file is missing or you want to reset to defaults.</span>
+    </div>
+  </div>
+
+  <!-- Profiles -->
+  <div class="rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+      <h2 class="text-sm font-semibold text-slate-800">Profiles</h2>
+      <span class="text-xs text-slate-500">Save the current editor content as a named profile, then swap with one click.</span>
+    </div>
+
+    <form method="post" action="{% url 'profile_save' provider.key %}"
+          class="flex flex-wrap items-end gap-2 border-b border-slate-200 px-4 py-3"
+          onsubmit="this.querySelector('textarea[name=content]').value = (document.querySelector('textarea[name=content]:not([class*=hidden])') || {value: ''}).value;">
+      {% csrf_token %}
+      <div>
+        <label class="block text-xs text-slate-600">Name</label>
+        <input name="name" required maxlength="120"
+               class="mt-1 w-48 rounded-md border-slate-300 bg-white px-2 py-1 text-sm shadow-sm" placeholder="e.g. work-tokens" />
+      </div>
+      <div class="grow">
+        <label class="block text-xs text-slate-600">Note <span class="text-slate-400">(optional)</span></label>
+        <input name="note" maxlength="255"
+               class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1 text-sm shadow-sm" placeholder="What's special about this profile" />
+      </div>
+      <textarea name="content" class="hidden"></textarea>
+      <button type="submit"
+              class="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">
+        Save profile from editor
+      </button>
+    </form>
+
+    <div class="divide-y divide-slate-100">
+      {% for prof in profiles %}
+      <div class="flex flex-wrap items-center gap-3 px-4 py-3">
+        <div class="grow">
+          <div class="flex items-center gap-2">
+            <span class="font-medium text-slate-800">{{ prof.name }}</span>
+            <span class="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] uppercase text-slate-600">{{ prof.fmt }}</span>
+          </div>
+          {% if prof.note %}<div class="text-xs text-slate-500">{{ prof.note }}</div>{% endif %}
+          <div class="text-[11px] text-slate-400">Updated {{ prof.updated_at|date:"Y-m-d H:i" }}</div>
+        </div>
+        <form method="post" action="{% url 'profile_apply' provider.key prof.id %}">
+          {% csrf_token %}
+          <button onclick="return confirm('Apply profile {{ prof.name|escapejs }}? Current file will be backed up.')"
+                  class="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm text-emerald-800 hover:bg-emerald-100">
+            Apply
+          </button>
+        </form>
+        <form method="post" action="{% url 'profile_delete' provider.key prof.id %}">
+          {% csrf_token %}
+          <button onclick="return confirm('Delete profile {{ prof.name|escapejs }}?')"
+                  class="rounded-md border border-rose-200 bg-white px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-50">
+            Delete
+          </button>
+        </form>
+      </div>
+      {% empty %}
+      <div class="px-4 py-6 text-center text-sm text-slate-500">No profiles saved yet.</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Backups -->
+  <div class="rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+      <h2 class="text-sm font-semibold text-slate-800">Backups</h2>
+      <span class="text-xs text-slate-500">Created automatically before each write. Restore creates a new backup of the current file first.</span>
+    </div>
+    <div class="divide-y divide-slate-100">
+      {% for b in backups %}
+      <div class="flex flex-wrap items-center gap-3 px-4 py-2 text-sm">
+        <code class="grow truncate font-mono text-slate-700">{{ b.path.name }}</code>
+        <span class="text-xs text-slate-500">{{ b.display_time }}</span>
+        <span class="text-xs text-slate-400">{{ b.size }} B</span>
+        <form method="post" action="{% url 'backup_restore' provider.key b.path.name %}">
+          {% csrf_token %}
+          <button onclick="return confirm('Restore from {{ b.path.name|escapejs }}? Current file will be backed up.')"
+                  class="rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs text-emerald-800 hover:bg-emerald-100">
+            Restore
+          </button>
+        </form>
+        <form method="post" action="{% url 'backup_delete' provider.key b.path.name %}">
+          {% csrf_token %}
+          <button onclick="return confirm('Delete backup {{ b.path.name|escapejs }}?')"
+                  class="rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs text-rose-700 hover:bg-rose-50">
+            Delete
+          </button>
+        </form>
+      </div>
+      {% empty %}
+      <div class="px-4 py-6 text-center text-sm text-slate-500">No backups yet.</div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+<script>
+  function detailPage(opts) {
+    return {
+      externalChanged: false,
+      changedAt: '',
+      testing: false,
+      testResults: [],
+      _sig: opts.initialSig,
+      _size: opts.initialSize,
+      _opts: opts,
+      startWatching() {
+        const tick = async () => {
+          if (this.externalChanged) return;
+          try {
+            const res = await fetch(this._opts.sigUrl);
+            const data = await res.json();
+            if (data.mtime && (data.mtime !== this._sig || data.size !== this._size)) {
+              this.externalChanged = true;
+              const d = new Date(data.mtime * 1000);
+              this.changedAt = d.toLocaleTimeString();
+            }
+          } catch (err) {}
+        };
+        setInterval(tick, 5000);
+      },
+      async runTest() {
+        this.testing = true;
+        this.testResults = [];
+        try {
+          const res = await fetch(this._opts.testUrl);
+          const data = await res.json();
+          this.testResults = data.results || [];
+        } catch (err) {
+          this.testResults = [{ label: 'request', message: 'failed: ' + err.message, status: 'error', latency_ms: 0, url: '' }];
+        } finally {
+          this.testing = false;
+        }
+      },
+    };
+  }
+
+  function editor(opts) {
+    return {
+      status: 'idle',
+      statusMessage: '',
+      masked: false,
+      diffOpen: false,
+      diffHtml: '',
+      diffStatus: '',
+      _format: opts.format,
+      _url: opts.validateUrl,
+      _diffUrl: opts.diffUrl,
+      _csrf: opts.csrfToken,
+      _raw: '',
+      _masked: '',
+      init() {
+        this._raw = this.$refs.rawSource.value;
+        this._masked = this.$refs.maskedSource.value;
+        this.validateNow();
+      },
+      toggleMasked() {
+        if (this.masked) {
+          this._raw = this.$refs.area.value;  // remember edits
+          this.$refs.area.value = this._masked || this._raw;
+        } else {
+          this.$refs.area.value = this._raw;
+          this.validateNow();
+        }
+      },
+      syncContentInto(target) {
+        target.value = this.masked ? this._raw : this.$refs.area.value;
+      },
+      async validateNow() {
+        if (this.masked) return;
+        const text = this.$refs.area.value;
+        const fd = new FormData();
+        fd.append('content', text);
+        fd.append('csrfmiddlewaretoken', this._csrf);
+        try {
+          const res = await fetch(this._url, {
+            method: 'POST',
+            body: fd,
+            headers: { 'X-CSRFToken': this._csrf },
+          });
+          const data = await res.json();
+          if (data.ok) {
+            this.status = 'ok';
+            this.statusMessage = data.message === 'empty'
+              ? 'empty (will write {})'
+              : `${data.format.toUpperCase()} valid`;
+          } else {
+            this.status = 'error';
+            this.statusMessage = data.message;
+          }
+        } catch (err) {
+          this.status = 'error';
+          this.statusMessage = 'validation request failed';
+        }
+      },
+      format() {
+        if (this.masked) {
+          this.statusMessage = 'Untick "Mask secrets" to edit/format';
+          this.status = 'error';
+          return;
+        }
+        if (this._format !== 'json') {
+          this.statusMessage = 'Format button only supports JSON';
+          this.status = 'error';
+          return;
+        }
+        try {
+          const parsed = JSON.parse(this.$refs.area.value || '{}');
+          this.$refs.area.value = JSON.stringify(parsed, null, 2) + '\n';
+          this.validateNow();
+        } catch (err) {
+          this.status = 'error';
+          this.statusMessage = 'Cannot format: ' + err.message;
+        }
+      },
+      async previewDiff() {
+        if (this.masked) {
+          this.statusMessage = 'Untick "Mask secrets" first';
+          this.status = 'error';
+          return;
+        }
+        const fd = new FormData();
+        fd.append('content', this.$refs.area.value);
+        fd.append('csrfmiddlewaretoken', this._csrf);
+        try {
+          const res = await fetch(this._diffUrl, {
+            method: 'POST',
+            body: fd,
+            headers: { 'X-CSRFToken': this._csrf },
+          });
+          const data = await res.json();
+          if (data.unchanged) {
+            this.diffStatus = 'No changes';
+            this.diffHtml = '<span class="text-slate-400">No changes vs disk.</span>';
+          } else {
+            this.diffStatus = 'Changes detected';
+            this.diffHtml = this._colorize(data.diff);
+          }
+          this.diffOpen = true;
+        } catch (err) {
+          this.diffStatus = 'request failed';
+          this.diffHtml = '';
+          this.diffOpen = true;
+        }
+      },
+      _colorize(text) {
+        const esc = (s) => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+        return text.split('\n').map(line => {
+          const e = esc(line);
+          if (line.startsWith('+++') || line.startsWith('---'))
+            return `<span class="text-slate-400">${e}</span>`;
+          if (line.startsWith('@@'))
+            return `<span class="text-sky-300">${e}</span>`;
+          if (line.startsWith('+'))
+            return `<span class="text-emerald-300">${e}</span>`;
+          if (line.startsWith('-'))
+            return `<span class="text-rose-300">${e}</span>`;
+          return `<span class="text-slate-300">${e}</span>`;
+        }).join('\n');
+      },
+    };
+  }
+</script>
+{% endblock %}

@@ -1,0 +1,47 @@
+from django.urls import path
+
+from . import views
+
+urlpatterns = [
+    path("", views.index, name="provider_index"),
+    path("settings/", views.settings_view, name="settings"),
+    path("settings/save/", views.settings_save, name="settings_save"),
+    path("settings/reset/<str:key>/", views.settings_reset, name="settings_reset"),
+    path("p/<str:key>/", views.detail, name="provider_detail"),
+    path("p/<str:key>/validate/", views.validate, name="provider_validate"),
+    path("p/<str:key>/diff/", views.diff_preview, name="provider_diff"),
+    path("p/<str:key>/structured/diff/", views.structured_diff, name="provider_structured_diff"),
+    path("p/<str:key>/signature/", views.file_signature, name="provider_signature"),
+    path("p/<str:key>/test-connection/", views.connection_test, name="provider_test_connection"),
+    path("p/<str:key>/download/", views.download, name="provider_download"),
+    path("p/<str:key>/reload/", views.reload_from_disk, name="provider_reload"),
+    path("p/<str:key>/template/", views.generate_template, name="provider_template"),
+    path(
+        "p/<str:key>/structured/save/",
+        views.save_structured,
+        name="provider_structured_save",
+    ),
+    # Backups
+    path(
+        "p/<str:key>/backups/<str:filename>/restore/",
+        views.restore_backup,
+        name="backup_restore",
+    ),
+    path(
+        "p/<str:key>/backups/<str:filename>/delete/",
+        views.delete_backup,
+        name="backup_delete",
+    ),
+    # Profiles
+    path("p/<str:key>/profiles/save/", views.save_profile, name="profile_save"),
+    path(
+        "p/<str:key>/profiles/<int:pid>/apply/",
+        views.apply_profile,
+        name="profile_apply",
+    ),
+    path(
+        "p/<str:key>/profiles/<int:pid>/delete/",
+        views.delete_profile,
+        name="profile_delete",
+    ),
+]
