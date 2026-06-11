@@ -18,6 +18,8 @@ import platform
 from dataclasses import dataclass
 from pathlib import Path
 
+from .schema import SCHEMAS, ProviderSchema
+
 
 @dataclass(frozen=True)
 class Provider:
@@ -155,3 +157,8 @@ def get_provider(key: str) -> Provider | None:
 def all_providers() -> list[Provider]:
     """Return all providers with overrides applied (preserves declaration order)."""
     return [get_provider(p.key) or p for p in PROVIDERS]
+
+
+def get_schema(key: str) -> ProviderSchema | None:
+    """Return the schema for a provider key, or ``None``."""
+    return SCHEMAS.get(key)

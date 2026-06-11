@@ -11,8 +11,8 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from .forms import ConfigEditForm
-from .models import PathOverride, Profile
-from .registry import PROVIDER_MAP, all_providers, default_path, get_provider
+from .models import PathOverride, Profile, OAuthConfig
+from .registry import PROVIDER_MAP, all_providers, default_path, get_provider, get_schema
 from .services import (
     ConfigParseError,
     backup_file,
@@ -24,6 +24,7 @@ from .services import (
     serialize,
     validate_text,
     write_text,
+    get_oauth_status,
 )
 from .connection import test_provider as run_connection_test
 from .structured import apply_post, build_context
@@ -87,6 +88,20 @@ def detail(request, key: str):
     structured_ctx = build_context(provider, raw_text)
     file_sig = _file_signature(provider)
 
+    # OAuth status for providers that support it (e.g., Claude Code).
+    # Also checks OAuthConfig in DB so any provider can be OAuth-enabled via Settings.
+    oauth_status = None
+    schema = get_schema(provider.key)
+    if schema and schema.has_oauth:
+        oauth_status = get_oauth_status(provider.key)
+    else:
+        try:
+            from .models import OAuthConfig
+            if OAuthConfig.objects.filter(provider_key=provider.key, enabled=True).exists():
+                oauth_status = get_oauth_status(provider.key)
+        except Exception:
+            pass
+
     return render(
         request,
         "providers/detail.html",
@@ -99,6 +114,7 @@ def detail(request, key: str):
             "profiles": Profile.objects.filter(provider_key=provider.key),
             "structured": structured_ctx,
             "file_sig": file_sig,
+            "oauth_status": oauth_status,
         },
     )
 
@@ -387,12 +403,14 @@ def connection_test(request, key: str):
 
 
 def settings_view(request):
-    """List all providers with current path + override status."""
+    """List all providers with current path + override status + OAuth config."""
     overrides = {o.provider_key: o for o in PathOverride.objects.all()}
+    oauth_configs = {o.provider_key: o for o in OAuthConfig.objects.all()}
     rows = []
     for base in PROVIDER_MAP.values():
         eff = get_provider(base.key) or base
         ovr = overrides.get(base.key)
+        oa = oauth_configs.get(base.key)
         rows.append(
             {
                 "key": base.key,
@@ -402,6 +420,12 @@ def settings_view(request):
                 "current_path": str(eff.path),
                 "is_override": bool(ovr),
                 "exists": eff.exists,
+                "oauth_enabled": oa.enabled if oa else False,
+                "oauth_command": oa.command if oa else "",
+                "oauth_email_path": oa.json_path_email if oa else "email",
+                "oauth_plan_path": oa.json_path_plan if oa else "subscriptionType",
+                "oauth_org_path": oa.json_path_org if oa else "orgName",
+                "oauth_logged_in_path": oa.json_path_logged_in if oa else "loggedIn",
             }
         )
     import platform as _platform
@@ -443,6 +467,51 @@ def settings_reset(request, key: str):
     deleted, _ = PathOverride.objects.filter(provider_key=key).delete()
     if deleted:
         messages.success(request, f"Reset {key} to default path.")
+    return redirect(reverse("settings"))
+
+
+@require_POST
+def oauth_save(request):
+    """Save OAuth configuration for a provider."""
+    key = request.POST.get("provider_key", "").strip()
+    if key not in PROVIDER_MAP:
+        messages.error(request, f"Unknown provider: {key}")
+        return redirect(reverse("settings"))
+
+    enabled = request.POST.get("oauth_enabled") == "1"
+    command = request.POST.get("oauth_command", "").strip()
+    email_path = request.POST.get("oauth_email_path", "email").strip()
+    plan_path = request.POST.get("oauth_plan_path", "subscriptionType").strip()
+    org_path = request.POST.get("oauth_org_path", "orgName").strip()
+    logged_in_path = request.POST.get("oauth_logged_in_path", "loggedIn").strip()
+
+    if enabled:
+        OAuthConfig.objects.update_or_create(
+            provider_key=key,
+            defaults={
+                "enabled": True,
+                "command": command or "claude auth status",
+                "json_path_email": email_path or "email",
+                "json_path_plan": plan_path or "subscriptionType",
+                "json_path_org": org_path,
+                "json_path_logged_in": logged_in_path or "loggedIn",
+            },
+        )
+        messages.success(request, f"OAuth config saved for {key}.")
+    else:
+        OAuthConfig.objects.filter(provider_key=key).delete()
+        messages.success(request, f"OAuth disabled for {key}.")
+
+    return redirect(reverse("settings"))
+
+
+@require_POST
+def oauth_reset(request, key: str):
+    """Reset OAuth config to factory default."""
+    if key not in PROVIDER_MAP:
+        raise Http404
+    OAuthConfig.objects.filter(provider_key=key).delete()
+    messages.success(request, f"OAuth config reset for {key}.")
     return redirect(reverse("settings"))
 
 
@@ -496,3 +565,61 @@ STARTER_TEMPLATES: dict[str, dict] = {
         "providers": [],
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# Extensions page — list skills/agents/MCP/hooks/plugins across all providers
+# ---------------------------------------------------------------------------
+
+def extensions_view(request):
+    """Display all extensions grouped by provider, with type sub-sections."""
+    from .extensions import discover_extensions, EXTENSION_LABELS
+
+    all_extensions = discover_extensions()
+
+    # Group by provider first, then by type
+    providers_data = {}
+    for ext in all_extensions:
+        if ext.provider_key not in providers_data:
+            provider = get_provider(ext.provider_key)
+            providers_data[ext.provider_key] = {
+                "key": ext.provider_key,
+                "name": provider.name if provider else ext.provider_key,
+                "extensions": {
+                    "skill": [],
+                    "agent": [],
+                    "mcp": [],
+                    "hook": [],
+                    "plugin": [],
+                },
+                "total": 0,
+            }
+        providers_data[ext.provider_key]["extensions"][ext.ext_type].append(ext)
+        providers_data[ext.provider_key]["total"] += 1
+
+    # Add type labels to each provider's sections
+    for prov_key, prov_data in providers_data.items():
+        prov_data["sections"] = []
+        for ext_type, label_info in EXTENSION_LABELS.items():
+            items = prov_data["extensions"].get(ext_type, [])
+            prov_data["sections"].append({
+                "type": ext_type,
+                "title": label_info["title"],
+                "description": label_info["description"],
+                "example": label_info["example"],
+                "format": label_info["format"],
+                "items": items,
+                "count": len(items),
+            })
+
+    # Sort providers by name
+    providers_list = sorted(providers_data.values(), key=lambda p: p["name"])
+
+    return render(
+        request,
+        "providers/extensions.html",
+        {
+            "providers": providers_list,
+            "total_count": len(all_extensions),
+        },
+    )

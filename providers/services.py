@@ -256,3 +256,98 @@ def mask_text(text: str, fmt: str) -> str:
     except ConfigParseError:
         return text  # don't break invalid files
     return serialize(mask_secrets(data), fmt)
+
+
+# ---------------------------------------------------------------------------
+# OAuth status detection (Claude Code `claude auth login`)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class OAuthStatus:
+    logged_in: bool
+    auth_method: str = ""
+    email: str = ""
+    subscription_type: str = ""
+    org_name: str = ""
+    raw: dict | None = None
+
+    @property
+    def summary(self) -> str:
+        if not self.logged_in:
+            return "Not logged in via OAuth"
+        parts = [f"✅ {self.email}"]
+        if self.subscription_type:
+            parts.append(f"({self.subscription_type})")
+        if self.org_name:
+            parts.append(f"· {self.org_name}")
+        return " ".join(parts)
+
+
+def get_oauth_status(provider_key: str) -> OAuthStatus:
+    """Detect OAuth login status for a provider.
+
+    Reads configuration from ``OAuthConfig`` model (if available) and
+    executes the configured CLI command to parse JSON output.
+    Falls back gracefully when the CLI is not installed or config is missing.
+    """
+    # Load OAuthConfig from DB (if available)
+    cmd_parts: list[str] = []
+    paths: dict[str, str] = {}
+    enabled = False
+
+    try:
+        from .models import OAuthConfig
+
+        cfg = OAuthConfig.objects.filter(provider_key=provider_key).first()
+        if cfg and cfg.enabled and cfg.command.strip():
+            import shlex
+            cmd_parts = shlex.split(cfg.command)
+            paths = {
+                "email": cfg.json_path_email or "email",
+                "plan": cfg.json_path_plan or "subscriptionType",
+                "org": cfg.json_path_org,
+                "logged_in": cfg.json_path_logged_in or "loggedIn",
+            }
+            enabled = True
+    except Exception:
+        pass  # DB not ready or model doesn't exist yet
+
+    # Fallback: Claude Code built-in OAuth (when no DB override)
+    if not enabled and provider_key == "claude":
+        cmd_parts = ["claude", "auth", "status"]
+        paths = {"email": "email", "plan": "subscriptionType", "org": "orgName", "logged_in": "loggedIn"}
+        enabled = True
+
+    if not enabled or not cmd_parts:
+        return OAuthStatus(logged_in=False)
+
+    import subprocess
+
+    def _deep_get(d: dict, key_path: str) -> Any:
+        for part in key_path.split("."):
+            if isinstance(d, dict):
+                d = d.get(part)
+            else:
+                return None
+        return d
+
+    try:
+        result = subprocess.run(
+            cmd_parts,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return OAuthStatus(logged_in=False)
+        data: dict[str, Any] = json.loads(result.stdout)
+        return OAuthStatus(
+            logged_in=bool(_deep_get(data, paths["logged_in"])),
+            auth_method="oauth",
+            email=str(_deep_get(data, paths["email"]) or ""),
+            subscription_type=str(_deep_get(data, paths["plan"]) or ""),
+            org_name=str(_deep_get(data, paths.get("org", "")) or ""),
+            raw=data,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError, Exception):
+        return OAuthStatus(logged_in=False)

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Extensions · AI Config Manager{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex items-start justify-between">
+  <div>
+    <h1 class="text-2xl font-semibold">Extensions</h1>
+    <p class="mt-1 text-sm text-slate-600">
+      Skills, agents, MCP servers, hooks, and plugins — organized by provider.
+    </p>
+    <p class="mt-1 text-xs text-slate-500">Total: <strong>{{ total_count }}</strong> extensions across <strong>{{ providers|length }}</strong> providers</p>
+  </div>
+  <a href="{% url 'provider_index' %}" class="text-sm text-slate-600 hover:text-slate-900">← Back</a>
+</div>
+
+<div x-data="{ providerTab: '{{ providers.0.key }}' }" class="space-y-6">
+  {# Provider tabs #}
+  <div class="flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+    {% for prov in providers %}
+    <button type="button" @click="providerTab = '{{ prov.key }}'"
+            :class="providerTab === '{{ prov.key }}' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'"
+            class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors">
+      {{ prov.name }}
+      <span class="ml-1 text-xs opacity-75">({{ prov.total }})</span>
+    </button>
+    {% endfor %}
+  </div>
+
+  {# Provider panels #}
+  {% for prov in providers %}
+  <div x-show="providerTab === '{{ prov.key }}'" class="space-y-6">
+    <div class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <h2 class="text-lg font-semibold text-slate-900">{{ prov.name }}</h2>
+      <p class="text-sm text-slate-600">{{ prov.total }} extensions discovered</p>
+    </div>
+
+    {% for section in prov.sections %}
+      {% if section.items %}
+        {% include "providers/_extensions_section.html" with section=section show_label=True %}
+      {% endif %}
+    {% endfor %}
+
+    {% if prov.total == 0 %}
+    <div class="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+      No extensions found for {{ prov.name }}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

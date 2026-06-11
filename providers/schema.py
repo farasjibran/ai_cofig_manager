@@ -24,10 +24,12 @@ class ProviderSchema:
     has_opencode_providers: bool = False    # OpenCode + Kilo nested provider.<id>.models
     has_claude_permissions: bool = False    # allow/deny string lists
     has_claude_hooks: bool = False          # hooks editor
+    has_oauth: bool = False                 # OAuth-based login (e.g., Claude Code `claude auth login`)
 
 
 SCHEMAS: dict[str, ProviderSchema] = {
     "claude": ProviderSchema(
+        has_oauth=True,
         fields=(
             FieldSpec(
                 path=("env", "ANTHROPIC_BASE_URL"),

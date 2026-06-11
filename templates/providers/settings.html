@@ -6,68 +6,130 @@
   <div>
     <h1 class="text-2xl font-semibold">Settings</h1>
     <p class="mt-1 text-sm text-slate-600">
-      Customize where each provider's config file lives. Empty input resets to default. <code>~</code> and <code>$VARS</code> are expanded automatically.
+      Customize config file path and OAuth detection per provider. Empty input resets to default.
+      <code>~</code> and <code>$VARS</code> are expanded automatically.
     </p>
     <p class="mt-1 text-xs text-slate-500">Detected OS: <code class="rounded bg-slate-100 px-1.5 py-0.5">{{ system }}</code></p>
   </div>
   <a href="{% url 'provider_index' %}" class="text-sm text-slate-600 hover:text-slate-900">← Back</a>
 </div>
 
-<div class="rounded-lg border border-slate-200 bg-white shadow-sm">
-  <div class="hidden border-b border-slate-200 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 md:grid md:grid-cols-12 md:gap-3">
-    <div class="md:col-span-2">Provider</div>
-    <div class="md:col-span-3">Default path</div>
-    <div class="md:col-span-5">Current path</div>
-    <div class="md:col-span-2 text-right">Actions</div>
-  </div>
+<div class="space-y-6">
 
-  <div class="divide-y divide-slate-100">
-    {% for r in rows %}
-    <div class="px-4 py-4 md:grid md:grid-cols-12 md:items-center md:gap-3">
-      <div class="md:col-span-2">
-        <div class="text-sm font-semibold text-slate-800">{{ r.name }}</div>
-        <div class="text-[11px] font-mono text-slate-500 uppercase">{{ r.format }}</div>
+  {% for r in rows %}
+  <div class="rounded-lg border border-slate-200 bg-white shadow-sm" x-data="{ oauthOpen: false, pathOpen: false }">
+    {# --- Path row --- #}
+    <div class="px-4 py-3 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="min-w-0">
+          <div class="text-sm font-semibold text-slate-800">{{ r.name }}</div>
+          <code class="block truncate text-[11px] font-mono text-slate-500" title="{{ r.current_path }}">{{ r.current_path }}</code>
+        </div>
+        <span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-mono uppercase text-slate-600">{{ r.format }}</span>
+        {% if r.is_override %}<span class="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700">override</span>{% endif %}
+        {% if r.exists %}<span class="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">on disk</span>{% else %}<span class="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">missing</span>{% endif %}
+        {% if r.oauth_enabled %}<span class="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] text-violet-700">oauth</span>{% endif %}
       </div>
-      <div class="md:col-span-3 mt-1 md:mt-0">
-        <code class="block truncate text-xs font-mono text-slate-500" title="{{ r.default_path }}">{{ r.default_path }}</code>
+      <div class="flex items-center gap-1 flex-shrink-0">
+        <button type="button" @click="pathOpen = !pathOpen"
+                class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50">
+          <span x-show="!pathOpen">Edit path</span>
+          <span x-show="pathOpen">Close</span>
+        </button>
+        <button type="button" @click="oauthOpen = !oauthOpen"
+                class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50">
+          <span x-show="!oauthOpen">OAuth</span>
+          <span x-show="oauthOpen">Close</span>
+        </button>
+        {% if r.is_override %}
+          <form method="post" action="{% url 'settings_reset' r.key %}">
+            {% csrf_token %}
+            <button class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50">Reset</button>
+          </form>
+        {% endif %}
       </div>
-      <form method="post" action="{% url 'settings_save' %}"
-            class="md:col-span-5 mt-2 md:mt-0 flex items-center gap-2">
+    </div>
+
+    {# --- Path editor panel --- #}
+    <div x-show="pathOpen" x-cloak class="border-t border-slate-200 px-4 py-3 bg-slate-50">
+      <form method="post" action="{% url 'settings_save' %}" class="flex items-center gap-2">
         {% csrf_token %}
         <input type="hidden" name="provider_key" value="{{ r.key }}" />
         <input name="path" value="{{ r.current_path }}"
                placeholder="{{ r.default_path }}"
                class="grow rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono shadow-sm" />
         <button type="submit"
-                class="rounded-md bg-slate-900 px-3 py-1 text-xs font-medium text-white hover:bg-slate-700">Save</button>
+                class="rounded-md bg-slate-900 px-3 py-1 text-xs font-medium text-white hover:bg-slate-700">Save path</button>
       </form>
-      <div class="md:col-span-2 mt-2 md:mt-0 flex items-center justify-end gap-2">
-        {% if r.is_override %}
-          <span class="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700">override</span>
-          <form method="post" action="{% url 'settings_reset' r.key %}">
+      <p class="mt-1 text-[11px] text-slate-500">Default: <code class="font-mono">{{ r.default_path }}</code></p>
+    </div>
+
+    {# --- OAuth config panel --- #}
+    <div x-show="oauthOpen" x-cloak class="border-t border-slate-200 px-4 py-3 bg-slate-50">
+      <form method="post" action="{% url 'oauth_save' %}" class="space-y-3">
+        {% csrf_token %}
+        <input type="hidden" name="provider_key" value="{{ r.key }}" />
+
+        <label class="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="oauth_enabled" value="1" {% if r.oauth_enabled %}checked{% endif %}
+                 class="rounded border-slate-300" />
+          <span>Enable OAuth detection for {{ r.name }}</span>
+          {% if r.oauth_enabled %}
+            <span class="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] text-violet-700">active</span>
+          {% endif %}
+        </label>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-700">CLI command</label>
+            <input name="oauth_command" value="{{ r.oauth_command|default:'' }}" placeholder="claude auth status"
+                   class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+            <p class="mt-0.5 text-[10px] text-slate-500">Must output JSON with login status fields.</p>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-700">JSON path → Logged-in flag</label>
+            <input name="oauth_logged_in_path" value="{{ r.oauth_logged_in_path }}" placeholder="loggedIn"
+                   class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-700">JSON path → Email</label>
+            <input name="oauth_email_path" value="{{ r.oauth_email_path }}" placeholder="email"
+                   class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-700">JSON path → Plan</label>
+            <input name="oauth_plan_path" value="{{ r.oauth_plan_path }}" placeholder="subscriptionType"
+                   class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+          </div>
+          <div class="sm:col-span-2">
+            <label class="block text-xs font-medium text-slate-700">JSON path → Organization <span class="text-slate-400">(optional)</span></label>
+            <input name="oauth_org_path" value="{{ r.oauth_org_path }}" placeholder="orgName"
+                   class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 pt-1">
+          <button type="submit"
+                  class="rounded-md bg-violet-700 px-3 py-1 text-xs font-medium text-white hover:bg-violet-600">Save OAuth</button>
+          <form method="post" action="{% url 'oauth_reset' r.key %}">
             {% csrf_token %}
             <button class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50">Reset</button>
           </form>
-        {% else %}
-          <span class="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">default</span>
-        {% endif %}
-        {% if r.exists %}
-          <span class="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">on disk</span>
-        {% else %}
-          <span class="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">missing</span>
-        {% endif %}
-      </div>
+        </div>
+      </form>
     </div>
-    {% endfor %}
   </div>
+  {% endfor %}
+
 </div>
 
 <div class="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600">
-  <p class="font-semibold">Tips</p>
-  <ul class="mt-1 list-disc pl-5">
-    <li><strong>macOS / Linux</strong>: most CLIs read <code>~/.&lt;tool&gt;/settings.json</code> or <code>~/.config/&lt;tool&gt;/...</code>.</li>
-    <li><strong>Windows</strong>: try <code>%APPDATA%\&lt;tool&gt;\config.json</code> or <code>$env:USERPROFILE\.&lt;tool&gt;\settings.json</code>.</li>
-    <li>Use absolute paths or paths starting with <code>~</code>. Environment variables like <code>$XDG_CONFIG_HOME</code> are expanded.</li>
+  <p class="font-semibold">Examples</p>
+  <ul class="mt-1 list-disc pl-5 space-y-1">
+    <li><strong>Claude Code OAuth (default):</strong> command <code>claude auth status</code>, logged-in: <code>loggedIn</code>, email: <code>email</code>, plan: <code>subscriptionType</code>.</li>
+    <li><strong>GitHub CLI OAuth:</strong> command <code>gh auth status --hostname github.com --show-token 2&gt;&amp;1</code> — but this outputs text, not JSON. Wrap in a script that emits JSON.</li>
+    <li><strong>Google Cloud:</strong> command <code>gcloud auth print-access-token 2&gt;/dev/null &amp;&amp; echo '{"logged_in":true}' || echo '{"logged_in":false}'</code></li>
+    <li>Any CLI that outputs <code>{"logged_in": true, "email": "...", ...}</code> can be used.</li>
   </ul>
 </div>
 {% endblock %}

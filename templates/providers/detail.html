@@ -75,6 +75,24 @@
   </div>
 </div>
 
+<!-- OAuth status banner (Claude Code / future providers) -->
+{% if oauth_status and oauth_status.logged_in %}
+<div class="mb-4 rounded-md border border-emerald-300 bg-emerald-50 px-4 py-3">
+  <div class="flex items-start gap-3">
+    <span class="text-lg">🔐</span>
+    <div>
+      <div class="text-sm font-semibold text-emerald-900">Logged in via OAuth (claude.ai)</div>
+      <div class="mt-1 space-y-0.5 text-xs text-emerald-800">
+        <div><strong>Email:</strong> {{ oauth_status.email }}</div>
+        <div><strong>Plan:</strong> {{ oauth_status.subscription_type|default:"—" }}</div>
+        {% if oauth_status.org_name %}<div><strong>Org:</strong> {{ oauth_status.org_name }}</div>{% endif %}
+        <div class="mt-1 text-emerald-600">Token is managed by OS keychain. <code>ANTHROPIC_AUTH_TOKEN</code> in settings.json is <em>not</em> used for OAuth logins.</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <div x-data="{ tab: '{% if structured.has_structured and not structured.parse_error %}structured{% else %}raw{% endif %}' }"
      class="space-y-6">
 

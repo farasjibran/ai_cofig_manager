@@ -269,24 +269,52 @@
         ev.target.closest('div.flex').remove();
       },
       addEnvRow(body) {
+        const self = this;
         const wrap = document.createElement('div');
         wrap.className = 'flex items-center gap-2';
-        wrap.setAttribute('x-data', "{ show: true, secret: false }");
-        wrap.innerHTML = `
-          <input name="env_key" placeholder="KEY"
-                 @input="secret = $root.isSecretKey($el.value); if (!secret) show = true"
-                 class="w-1/3 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
-          <div class="grow relative">
-            <input name="env_value" placeholder="value"
-                   :type="(secret && !show) ? 'password' : 'text'"
-                   autocomplete="off"
-                   class="w-full rounded-md border-slate-300 bg-white px-2 py-1 pr-12 text-sm font-mono" />
-            <button type="button" x-show="secret" @click="show = !show"
-                    class="absolute inset-y-0 right-1 my-auto h-6 rounded-md bg-slate-100 px-2 text-[11px] font-medium text-slate-700 hover:bg-slate-200"
-                    x-text="show ? 'Hide' : 'Show'"></button>
-          </div>
-          <button type="button" class="rounded-md border border-rose-200 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-50">×</button>`;
-        wrap.querySelector('button:last-child').addEventListener('click', () => wrap.remove());
+        const keyInput = document.createElement('input');
+        keyInput.name = 'env_key';
+        keyInput.placeholder = 'KEY';
+        keyInput.className = 'w-1/3 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono';
+        const valueWrap = document.createElement('div');
+        valueWrap.className = 'grow relative';
+        const valueInput = document.createElement('input');
+        valueInput.name = 'env_value';
+        valueInput.placeholder = 'value';
+        valueInput.type = 'text';
+        valueInput.autocomplete = 'off';
+        valueInput.className = 'w-full rounded-md border-slate-300 bg-white px-2 py-1 pr-12 text-sm font-mono';
+        const showBtn = document.createElement('button');
+        showBtn.type = 'button';
+        showBtn.className = 'absolute inset-y-0 right-1 my-auto h-6 rounded-md bg-slate-100 px-2 text-[11px] font-medium text-slate-700 hover:bg-slate-200';
+        showBtn.textContent = 'Show';
+        showBtn.style.display = 'none';
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'rounded-md border border-rose-200 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-50';
+        removeBtn.textContent = '×';
+        let isSecret = false;
+        let isShown = true;
+        const updateVisibility = () => {
+          showBtn.style.display = isSecret ? '' : 'none';
+          valueInput.type = (isSecret && !isShown) ? 'password' : 'text';
+          showBtn.textContent = isShown ? 'Hide' : 'Show';
+        };
+        keyInput.addEventListener('input', () => {
+          isSecret = self.isSecretKey(keyInput.value);
+          if (!isSecret) isShown = true;
+          updateVisibility();
+        });
+        showBtn.addEventListener('click', () => {
+          isShown = !isShown;
+          updateVisibility();
+        });
+        removeBtn.addEventListener('click', () => wrap.remove());
+        valueWrap.appendChild(valueInput);
+        valueWrap.appendChild(showBtn);
+        wrap.appendChild(keyInput);
+        wrap.appendChild(valueWrap);
+        wrap.appendChild(removeBtn);
         body.appendChild(wrap);
       },
       addRow(body, names, placeholders) {
