@@ -55,4 +55,7 @@ urlpatterns = [
         views.session_detail,
         name="session_detail",
     ),
+    # MCP
+    path("p/<str:key>/mcp/", views.mcp_view, name="provider_mcp"),
+    path("p/<str:key>/mcp/save/", views.mcp_save, name="provider_mcp_save"),
 ]

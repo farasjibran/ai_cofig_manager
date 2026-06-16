@@ -104,6 +104,10 @@ def detail(request, key: str):
         except Exception:
             pass
 
+    # MCP support flag
+    from .mcp import get_mcp_key
+    has_mcp = get_mcp_key(key) is not None
+
     return render(
         request,
         "providers/detail.html",
@@ -117,6 +121,7 @@ def detail(request, key: str):
             "structured": structured_ctx,
             "file_sig": file_sig,
             "oauth_status": oauth_status,
+            "has_mcp": has_mcp,
         },
     )
 
@@ -836,3 +841,111 @@ def _load_full_chat(provider: str, session_id: str, cwd: str) -> list[dict]:
                 pass
 
     return messages
+
+
+# ── MCP Servers ────────────────────────────────────────────────────────────
+
+def mcp_view(request, key: str):
+    """Manage MCP servers for a provider — /p/<key>/mcp/."""
+    from .registry import get_provider
+    from .mcp import get_mcp_key, read_mcp_servers
+
+    prov = get_provider(key)
+    if not prov:
+        return redirect("provider_index")
+
+    mcp_key = get_mcp_key(key)
+    if not mcp_key:
+        return redirect("provider_detail", key=key)
+
+    servers = read_mcp_servers(prov)
+
+    # Pre-serialize complex fields for template use
+    def _server_dict(s):
+        return {
+            "name": s.name,
+            "command": s.command,
+            "args": s.args,
+            "args_str": "\n".join(s.args),
+            "env": s.env,
+            "env_str": "\n".join(f"{k}={v}" for k, v in s.env.items()),
+            "cwd": s.cwd,
+            "server_type": s.server_type,
+        }
+
+    return render(request, "providers/mcp.html", {
+        "provider": prov,
+        "mcp_key": mcp_key,
+        "servers": [_server_dict(s) for s in servers],
+    })
+
+
+def mcp_save(request, key: str):
+    """Add / edit / delete MCP server — POST only."""
+    from django.views.decorators.http import require_POST
+    from .registry import get_provider
+    from .mcp import MCPServer, get_mcp_key, read_mcp_servers, write_mcp_servers
+
+    prov = get_provider(key)
+    if not prov:
+        return redirect("provider_index")
+
+    mcp_key = get_mcp_key(key)
+    if not mcp_key:
+        return redirect("provider_detail", key=key)
+
+    action = request.POST.get("action", "")
+    servers = read_mcp_servers(prov)
+
+    if action == "add":
+        name = request.POST.get("name", "").strip()
+        command = request.POST.get("command", "").strip()
+        if name and command:
+            # Parse args (newline or comma separated)
+            args_raw = request.POST.get("args", "").strip()
+            args = [a.strip() for a in args_raw.replace(",", "\n").split("\n") if a.strip()]
+            # Parse env vars (key=value lines)
+            env_raw = request.POST.get("env", "").strip()
+            env = {}
+            for line in env_raw.splitlines():
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    env[k.strip()] = v.strip()
+            cwd = request.POST.get("cwd", "").strip()
+            servers.append(MCPServer(name=name, command=command, args=args, env=env, cwd=cwd,
+                                     server_type=request.POST.get("server_type", "")))
+            write_mcp_servers(prov, servers)
+            messages.success(request, f"MCP server '{name}' added.")
+
+    elif action == "edit":
+        orig_name = request.POST.get("orig_name", "").strip()
+        name = request.POST.get("name", "").strip()
+        command = request.POST.get("command", "").strip()
+        if orig_name and name and command:
+            args_raw = request.POST.get("args", "").strip()
+            args = [a.strip() for a in args_raw.replace(",", "\n").split("\n") if a.strip()]
+            env_raw = request.POST.get("env", "").strip()
+            env = {}
+            for line in env_raw.splitlines():
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    env[k.strip()] = v.strip()
+            cwd = request.POST.get("cwd", "").strip()
+            # Replace in list
+            new_servers = []
+            for s in servers:
+                if s.name == orig_name:
+                    new_servers.append(MCPServer(name=name, command=command, args=args, env=env, cwd=cwd,
+                                         server_type=request.POST.get("server_type", "")))
+                else:
+                    new_servers.append(s)
+            write_mcp_servers(prov, new_servers)
+            messages.success(request, f"MCP server '{name}' updated.")
+
+    elif action == "delete":
+        name = request.POST.get("name", "").strip()
+        servers = [s for s in servers if s.name != name]
+        write_mcp_servers(prov, servers)
+        messages.success(request, f"MCP server '{name}' deleted.")
+
+    return redirect("provider_mcp", key=key)

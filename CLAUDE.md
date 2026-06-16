@@ -27,6 +27,7 @@ providers/
   views.py             index, detail, validate, diff, download, profiles, backups, settings, oauth
   extensions.py        discover_extensions() — scans filesystem for skills/agents/mcp/hooks/plugins
   sessions.py          read_claude_sessions(), read_qwen_sessions(), read_codex_sessions()
+  mcp.py               MCPServer dataclass + read/write mcpServers from config (Claude/Gemini/Codex/OpenCode)
   connection.py        ConnectionTester — test API connectivity for providers
   forms.py             ConfigEditForm (single content textarea)
   models.py            Profile, PathOverride, OAuthConfig, TokenCheck
@@ -35,8 +36,10 @@ templates/
   base.html
   providers/
     index.html         provider grid
-    detail.html        Structured/Raw/Sessions tabs + profiles + backups
+    detail.html        Structured/Raw/Sessions/MCP tabs + profiles + backups
     sessions.html      Sessions Browser (all providers + per-provider views)
+    session_detail.html  Full chat history page
+    mcp.html           MCP Server management (add/edit/delete inline)
     extensions.html    Extensions Dashboard (discovered extensions by provider)
     settings.html      Custom paths + OAuth config management
     _structured_form.html   structured editor partial

@@ -112,6 +112,12 @@
        class="rounded-md px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 transition">
       Sessions
     </a>
+    {% if has_mcp %}
+    <a href="{% url 'provider_mcp' provider.key %}"
+       class="rounded-md px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 transition">
+      MCP
+    </a>
+    {% endif %}
   </div>
 
   <!-- Structured form -->
