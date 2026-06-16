@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import difflib
+import json
 import os
 import shutil
+from datetime import datetime
 
 from django.contrib import messages
 from django.http import Http404, HttpResponse, JsonResponse
@@ -623,3 +625,214 @@ def extensions_view(request):
             "total_count": len(all_extensions),
         },
     )
+
+
+# ── Sessions ───────────────────────────────────────────────────────────────
+
+PROVIDERS_WITH_SESSIONS = {"claude", "qwen", "codex"}
+
+
+def sessions_view(request):
+    """All sessions across providers — /sessions/."""
+    from .sessions import read_all_sessions
+    from .registry import all_providers
+
+    all_prov = all_providers()
+    all_sessions = read_all_sessions()
+
+    providers_data = []
+    for prov in all_prov:
+        sessions = all_sessions.get(prov.key, [])
+        has_data = prov.key in PROVIDERS_WITH_SESSIONS and len(sessions) > 0
+        providers_data.append({
+            "key": prov.key,
+            "name": prov.name,
+            "has_data": prov.key in PROVIDERS_WITH_SESSIONS,
+            "has_sessions": has_data,
+            "count": len(sessions),
+            "sessions": [s.to_dict() for s in sessions],
+        })
+
+    # Default tab
+    default_tab = request.GET.get("tab", "")
+    if not default_tab:
+        active = next((p for p in providers_data if p["has_sessions"]), None)
+        default_tab = active["key"] if active else "claude"
+
+    return render(request, "providers/sessions.html", {
+        "providers_data": providers_data,
+        "default_tab": default_tab,
+    })
+
+
+def provider_sessions(request, key: str):
+    """Sessions for a single provider — /p/<key>/sessions/."""
+    from .sessions import read_all_sessions
+    from .registry import get_provider
+
+    prov = get_provider(key)
+    if not prov:
+        return redirect("provider_index")
+
+    all_sessions = read_all_sessions()
+    sessions = all_sessions.get(key, [])
+
+    return render(request, "providers/sessions.html", {
+        "providers_data": [{
+            "key": prov.key,
+            "name": prov.name,
+            "has_data": key in PROVIDERS_WITH_SESSIONS,
+            "has_sessions": key in PROVIDERS_WITH_SESSIONS and len(sessions) > 0,
+            "count": len(sessions),
+            "sessions": [s.to_dict() for s in sessions],
+        }],
+        "default_tab": key,
+        "single_provider": True,
+    })
+
+
+def session_detail(request, provider: str, session_id: str):
+    """Full chat history for a single session — /sessions/<provider>/<session_id>/."""
+    from .sessions import read_all_sessions
+    from .registry import all_providers
+
+    if provider not in PROVIDERS_WITH_SESSIONS:
+        return redirect("sessions")
+
+    all_sessions = read_all_sessions()
+    provider_sessions_list = all_sessions.get(provider, [])
+
+    session = next((s for s in provider_sessions_list if s.session_id == session_id), None)
+    if not session:
+        return redirect("sessions")
+
+    # Load full chat history for this session
+    full_messages = _load_full_chat(provider, session_id, session.cwd)
+
+    # Provider display name
+    all_prov = all_providers()
+    prov_name = next((p.name for p in all_prov if p.key == provider), provider.title())
+
+    return render(request, "providers/session_detail.html", {
+        "session": session.to_dict(),
+        "provider": provider,
+        "provider_name": prov_name,
+        "full_messages": full_messages,
+    })
+
+
+def _load_full_chat(provider: str, session_id: str, cwd: str) -> list[dict]:
+    """Load all messages for a session, formatted for display."""
+    from pathlib import Path
+    from .sessions import _parse_jsonl, _parse_qwen_chat
+
+    HOME = Path.home()
+    messages: list[dict] = []
+
+    if provider == "claude":
+        history_path = HOME / ".claude" / "history.jsonl"
+        if history_path.exists():
+            try:
+                for line in history_path.read_text().splitlines():
+                    if not line.strip():
+                        continue
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    sid = entry.get("sessionId") or entry.get("session_id")
+                    if sid and sid != session_id:
+                        continue
+                    # Extract display text
+                    display = entry.get("display", "")
+                    if not display:
+                        msg = entry.get("message", {})
+                        if isinstance(msg, dict):
+                            parts = msg.get("parts", [])
+                            for p in parts:
+                                if isinstance(p, dict) and "text" in p:
+                                    display = p["text"]
+                                    break
+                    entry_type = entry.get("type", "unknown")
+                    messages.append({
+                        "type": entry_type,
+                        "display": display[:500] if display else "",
+                        "timestamp": entry.get("timestamp", 0),
+                    })
+            except OSError:
+                pass
+
+    elif provider == "qwen":
+        projects_dir = HOME / ".qwen" / "projects"
+        if projects_dir.exists():
+            for proj in projects_dir.iterdir():
+                if not proj.is_dir():
+                    continue
+                chats_dir = proj / "chats"
+                if not chats_dir.exists():
+                    continue
+                chat_file = chats_dir / f"{session_id}.jsonl"
+                if chat_file.exists():
+                    try:
+                        for line in chat_file.read_text().splitlines():
+                            if not line.strip():
+                                continue
+                            try:
+                                entry = json.loads(line)
+                            except json.JSONDecodeError:
+                                continue
+                            entry_type = entry.get("type", "unknown")
+                            display = ""
+                            if entry_type == "user":
+                                parts = entry.get("message", {}).get("parts", [])
+                                for p in parts:
+                                    if isinstance(p, dict) and "text" in p:
+                                        display = p["text"]
+                                        break
+                            elif entry_type == "model":
+                                parts = entry.get("message", {}).get("parts", [])
+                                for p in parts:
+                                    if isinstance(p, dict) and "text" in p:
+                                        display = p["text"]
+                                        break
+                            elif entry_type == "system":
+                                display = entry.get("subtype", "system")
+                            ts_str = entry.get("timestamp", "")
+                            ts_ms = 0
+                            if ts_str:
+                                try:
+                                    ts_ms = int(datetime.fromisoformat(ts_str.replace("Z", "+00:00")).timestamp() * 1000)
+                                except (ValueError, TypeError):
+                                    pass
+                            messages.append({
+                                "type": entry_type,
+                                "display": display[:500] if display else "",
+                                "timestamp": ts_ms,
+                            })
+                    except OSError:
+                        pass
+
+    elif provider == "codex":
+        history_path = HOME / ".codex" / "history.jsonl"
+        msgs, _, _ = _parse_jsonl(history_path, session_id, limit=9999)
+        if history_path.exists():
+            try:
+                for line in history_path.read_text().splitlines():
+                    if not line.strip():
+                        continue
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    sid = entry.get("session_id")
+                    if sid and sid != session_id:
+                        continue
+                    messages.append({
+                        "type": "text",
+                        "display": entry.get("text", "")[:500],
+                        "timestamp": int(entry.get("ts", 0) * 1000),
+                    })
+            except OSError:
+                pass
+
+    return messages

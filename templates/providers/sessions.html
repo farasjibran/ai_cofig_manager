@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% load tz %}
+
+{% block title %}{% if single_provider %}{{ providers_data.0.name }} Sessions{% else %}Sessions{% endif %} — AI Config Manager{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-6 py-8"
+     x-data="sessionsPage('{{ default_tab }}')">
+
+  {# Header #}
+  <div class="mb-6 flex items-start justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">
+        {% if single_provider %}
+          {{ providers_data.0.name }} — Sessions
+        {% else %}
+          Sessions
+        {% endif %}
+      </h1>
+      <p class="mt-1 text-sm text-slate-500">
+        {% if single_provider %}
+          {{ providers_data.0.count }} session{{ providers_data.0.count|pluralize }}
+        {% else %}
+          All providers — browse session history across AI tools
+        {% endif %}
+      </p>
+    </div>
+    {% if single_provider %}
+    <a href="{% url 'provider_detail' providers_data.0.key %}" class="text-sm text-slate-600 hover:text-slate-900">← Back</a>
+    {% endif %}
+  </div>
+
+  {# Provider tabs #}
+  {% if not single_provider %}
+  <div class="mb-6">
+    <div class="flex flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+      {% for p in providers_data %}
+      <button type="button"
+              @click="activeTab = '{{ p.key }}'"
+              :class="activeTab === '{{ p.key }}' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'"
+              class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors
+                     {% if not p.has_data %}opacity-40 cursor-not-allowed{% endif %}"
+              {% if not p.has_data %}disabled{% endif %}>
+        {{ p.name }}
+        <span class="ml-1 text-xs opacity-75">({{ p.count }})</span>
+      </button>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# Search #}
+  <div class="mb-4">
+    <input type="text" x-model="search" placeholder="🔍 Filter by project name..."
+           class="rounded-lg border-slate-300 px-3 py-2 text-sm w-64" />
+  </div>
+
+  {# Sessions tables per provider #}
+  {% for p in providers_data %}
+  <div x-show="activeTab === '{{ p.key }}'" class="space-y-4">
+    {% if p.has_data %}
+      {% if p.has_sessions %}
+      <div class="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th class="px-4 py-3 text-left font-medium text-slate-600">Project</th>
+              <th class="px-4 py-3 text-left font-medium text-slate-600">Started</th>
+              <th class="px-4 py-3 text-left font-medium text-slate-600">Last Activity</th>
+              <th class="px-4 py-3 text-left font-medium text-slate-600">Status</th>
+              <th class="px-4 py-3 text-left font-medium text-slate-600">Duration</th>
+              <th class="px-4 py-3 text-left font-medium text-slate-600">Messages</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for s in p.sessions %}
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="px-4 py-3">
+                <a href="{% url 'session_detail' p.key s.session_id %}"
+                   class="font-medium text-slate-800 hover:text-indigo-600 truncate max-w-[200px] block"
+                   title="{{ s.project }}">{{ s.project_name }}</a>
+                <div class="text-xs text-slate-400 truncate max-w-[200px]" title="{{ s.cwd }}">{{ s.cwd }}</div>
+              </td>
+              <td class="px-4 py-3 text-slate-600 whitespace-nowrap">
+                <div class="text-xs">{{ s.started_dt|date:"Y-m-d" }}</div>
+                <div class="text-xs text-slate-400">{{ s.started_dt|date:"H:i" }}</div>
+              </td>
+              <td class="px-4 py-3 text-slate-600 whitespace-nowrap">
+                <div class="text-xs">{{ s.updated_dt|date:"Y-m-d" }}</div>
+                <div class="text-xs text-slate-400">{{ s.updated_dt|date:"H:i" }}</div>
+              </td>
+              <td class="px-4 py-3">
+                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+                  {% if s.status == 'idle' %}bg-emerald-100 text-emerald-700
+                  {% elif s.status == 'active' %}bg-blue-100 text-blue-700
+                  {% else %}bg-slate-100 text-slate-600{% endif %}">
+                  {{ s.status }}
+                </span>
+              </td>
+              <td class="px-4 py-3 text-slate-600 whitespace-nowrap text-xs">
+                {{ s.duration_sec }}s
+              </td>
+              <td class="px-4 py-3 text-slate-600 text-xs">
+                {{ s.message_count }}
+                {% if s.tool_count > 0 %}<span class="text-slate-400"> ({{ s.tool_count }} tools)</span>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+        No sessions found for {{ p.name }}.
+      </div>
+      {% endif %}
+    {% else %}
+    <div class="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
+      {{ p.name }} does not store session history locally.
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+</div>
+
+<script>
+function sessionsPage(initialTab) {
+  return {
+    activeTab: initialTab,
+    search: '',
+  };
+}
+</script>
+{% endblock %}

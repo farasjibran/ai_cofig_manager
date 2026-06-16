@@ -4,14 +4,14 @@ Project context for Claude Code. Read this before making changes.
 
 ## What this is
 
-Local Django web app to view and edit AI tool configuration files (Claude Code, Qwen, Codex, OpenCode, Gemini, Cursor, Kilo, QwenPaw). Reads/writes JSON and TOML files under the user's home directory, with auto-backup, profile snapshots, structured forms, and diff preview.
+Local Django web app to view and edit AI tool configuration files (Claude Code, Qwen, Codex, OpenCode, Gemini, Cursor, Kilo, QwenPaw). Reads/writes JSON and TOML files under the user's home directory, with auto-backup, profile snapshots, structured forms, diff preview, and extension discovery.
 
 Runs on `127.0.0.1` only. Not designed for multi-user or network exposure.
 
 ## Stack
 
 - Python 3.12, Django 6.x, `tomli_w` for TOML write, `tomllib` (stdlib) for read
-- SQLite (`db.sqlite3`) — stores `Profile` snapshots only
+- SQLite (`db.sqlite3`) — stores profiles, path overrides, OAuth configs, and token check history
 - Frontend: Tailwind via CDN + Alpine.js (no build step)
 - Package manager: `uv`
 
@@ -24,15 +24,23 @@ providers/
   schema.py            Per-provider structured form schemas (FieldSpec + flags)
   services.py          read/parse/serialize/validate/backup/mask + JSONC fallback
   structured.py        build_context() and apply_post() for structured forms
-  views.py             index, detail, validate, diff, download, profiles, backups
+  views.py             index, detail, validate, diff, download, profiles, backups, settings, oauth
+  extensions.py        discover_extensions() — scans filesystem for skills/agents/mcp/hooks/plugins
+  sessions.py          read_claude_sessions(), read_qwen_sessions(), read_codex_sessions()
+  connection.py        ConnectionTester — test API connectivity for providers
   forms.py             ConfigEditForm (single content textarea)
-  models.py            Profile (provider_key, name, content, fmt, note)
+  models.py            Profile, PathOverride, OAuthConfig, TokenCheck
   urls.py
 templates/
   base.html
-  providers/index.html         provider grid
-  providers/detail.html        Structured/Raw tabs + profiles + backups
-  providers/_structured_form.html   structured editor partial
+  providers/
+    index.html         provider grid
+    detail.html        Structured/Raw/Sessions tabs + profiles + backups
+    sessions.html      Sessions Browser (all providers + per-provider views)
+    extensions.html    Extensions Dashboard (discovered extensions by provider)
+    settings.html      Custom paths + OAuth config management
+    _structured_form.html   structured editor partial
+    _extensions_section.html  extension type section partial
 ```
 
 ## Run
@@ -72,9 +80,10 @@ No URL or template changes needed for raw editor support.
 
 ## Endpoints (relevant ones)
 
-- `GET  /` — index
+### Core
+- `GET  /` — index (provider grid)
 - `GET  /p/<key>/` — detail (structured + raw + profiles + backups)
-- `POST /p/<key>/` — save raw editor content
+- `POST /p/<key>/` — save raw editor contents
 - `POST /p/<key>/structured/save/` — save structured form
 - `POST /p/<key>/validate/` — JSON validation (returns `{ok, message, format}`)
 - `POST /p/<key>/diff/` — unified diff for raw editor vs disk
@@ -87,6 +96,16 @@ No URL or template changes needed for raw editor support.
 - `POST /p/<key>/backups/<filename>/restore/` — restore a `.bak.*` file (with current backup first)
 - `POST /p/<key>/backups/<filename>/delete/`
 
+### Settings & OAuth
+- `GET  /settings/` — custom paths + OAuth config management
+- `POST /settings/save/` — save custom path override
+- `POST /settings/reset/<key>/` — reset path to default
+- `POST /settings/oauth/save/` — save OAuth detection config
+- `POST /settings/oauth/reset/<key>/` — reset OAuth config to default
+
+### Extensions
+- `GET  /extensions/` — Extensions Dashboard (discovered extensions by provider)
+
 All POST routes use Django CSRF.
 
 ## Conventions
@@ -96,6 +115,38 @@ All POST routes use Django CSRF.
 - TOML root must be a dict; reject otherwise.
 - Use `messages` framework for user-visible feedback after redirects.
 - Follow the existing error handling style: `ConfigParseError` for parser issues, `OSError` caught around `write_text`, JSON validation returned via `JsonResponse`.
+- Alpine.js dynamic DOM: use Vanilla JS (`document.createElement` + `addEventListener`) instead of `innerHTML` + `Alpine.initTree` for reliable event binding (see Env Editor `addEnvRow` pattern).
+
+## Features implemented
+
+### Core
+- Provider registry with OS-aware paths (Windows/Linux/macOS)
+- Raw editor (textarea) with syntax validation
+- Structured forms (schema-driven) with field types: text, select, checkbox, textarea, env-editor, array
+- Auto-backup on every write
+- Profile snapshots (save/restore/delete)
+- Backup history (restore/delete)
+- Diff preview (raw vs disk, structured vs disk)
+- Secret masking in raw editor
+- JSONC fallback for files with comments
+
+### Settings
+- Custom path overrides per provider (stored in `PathOverride` model)
+- OAuth login status detection (CLI-based, supports Claude Code)
+- OAuth config management (stored in `OAuthConfig` model)
+- Connection testing (`ConnectionTester` — validates API keys/tokens)
+
+### Extensions
+- Extensions Dashboard (`/extensions/`) — auto-discovers skills/agents/mcp/hooks/plugins from filesystem
+- Extension types: skill, agent, mcp, hook, plugin
+- Provider tabs with extension counts
+- Type-based sections with descriptions and examples
+
+### UI/UX
+- Password field show/hide toggle (auto-detects secret keys)
+- Env Editor with dynamic row add/remove (Vanilla JS pattern)
+- Responsive grid layouts
+- Toast messages for success/error feedback
 
 ## Things not implemented yet
 
@@ -104,3 +155,4 @@ All POST routes use Django CSRF.
 - Export/import profile bundle
 - Search/filter provider list
 - Tests (no `pytest` or Django test setup yet)
+

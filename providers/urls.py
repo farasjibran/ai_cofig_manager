@@ -47,4 +47,12 @@ urlpatterns = [
         views.delete_profile,
         name="profile_delete",
     ),
+    # Sessions
+    path("sessions/", views.sessions_view, name="sessions"),
+    path("p/<str:key>/sessions/", views.provider_sessions, name="provider_sessions"),
+    path(
+        "sessions/<str:provider>/<str:session_id>/",
+        views.session_detail,
+        name="session_detail",
+    ),
 ]
