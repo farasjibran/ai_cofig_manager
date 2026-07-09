@@ -120,6 +120,13 @@ PROVIDERS: list[Provider] = [
         format="json",
         description="QwenPaw agent configuration.",
     ),
+    Provider(
+        key="pi",
+        name="Pi Coding Agent",
+        path=HOME / ".pi" / "agent" / "settings.json",
+        format="json",
+        description="Pi coding agent (settings, models, MCP configuration).",
+    ),
 ]
 
 
