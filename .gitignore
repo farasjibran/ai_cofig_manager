@@ -14,3 +14,5 @@ wheels/
 *.sqlite
 db.sqlite3
 db.sqlite
+
+.DS_Store
