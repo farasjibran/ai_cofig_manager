@@ -25,6 +25,8 @@ class ProviderSchema:
     has_claude_permissions: bool = False    # allow/deny string lists
     has_claude_hooks: bool = False          # hooks editor
     has_oauth: bool = False                 # OAuth-based login (e.g., Claude Code `claude auth login`)
+    has_pi_multifile: bool = False          # Pi coding agent multi-file support (settings/models/mcp)
+    has_pi_models: bool = False             # Pi models with dynamic UI (like OpenCode providers)
 
 
 SCHEMAS: dict[str, ProviderSchema] = {
@@ -120,6 +122,23 @@ SCHEMAS: dict[str, ProviderSchema] = {
         ),
     ),
     "qwenpaw": ProviderSchema(),
+    "pi": ProviderSchema(
+        has_pi_multifile=True,
+        fields=(
+            FieldSpec(path=("defaultProvider",), label="Default provider", placeholder="anthropic"),
+            FieldSpec(path=("defaultModel",), label="Default model", placeholder="claude-sonnet-4"),
+            FieldSpec(path=("theme",), label="Theme", kind="select", options=("dark", "light")),
+            FieldSpec(path=("quietStartup",), label="Quiet startup", kind="select", options=("true", "false")),
+            FieldSpec(path=("enableInstallTelemetry",), label="Enable telemetry", kind="select", options=("true", "false")),
+            FieldSpec(path=("defaultProjectTrust",), label="Default project trust", kind="select", options=("ask", "always", "never")),
+            FieldSpec(path=("defaultThinkingLevel",), label="Default thinking level", kind="select", options=("low", "medium", "high")),
+            FieldSpec(path=("hideThinkingBlock",), label="Hide thinking block", kind="select", options=("true", "false")),
+        ),
+    ),
+    "pi-models": ProviderSchema(
+        has_pi_models=True,
+    ),
+    "pi-mcp": ProviderSchema(),
 }
 
 

@@ -58,4 +58,6 @@ urlpatterns = [
     # MCP
     path("p/<str:key>/mcp/", views.mcp_view, name="provider_mcp"),
     path("p/<str:key>/mcp/save/", views.mcp_save, name="provider_mcp_save"),
+    # Pi multi-file save
+    path("p/<str:key>/pi-save/", views.pi_save_file, name="pi_save_file"),
 ]

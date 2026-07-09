@@ -15,6 +15,7 @@ dari berbagai AI provider CLI/tool dalam satu tempat.
 | `cursor` | Cursor | `~/.cursor/settings.json` | JSON |
 | `kilo` | Kilo Code | `~/.config/kilo/config.json` | JSON |
 | `qwenpaw` | QwenPaw | `~/.qwenpaw/config.json` | JSON |
+| `pi` | Pi Coding Agent | `~/.pi/agent/settings.json` | JSON (multi-file: settings/models/mcp) |
 
 Provider list ada di `providers/registry.py` jika perlu menambah/ubah.
 

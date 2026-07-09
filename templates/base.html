@@ -22,10 +22,10 @@
         </div>
       </a>
       <nav class="flex items-center gap-4 text-sm">
-        <a href="{% url 'provider_index' %}" class="text-indigo-600 hover:underline">Providers</a>
-        <a href="{% url 'sessions' %}" class="text-slate-600 hover:text-slate-900">Sessions</a>
-        <a href="{% url 'extensions' %}" class="text-slate-600 hover:text-slate-900">Extensions</a>
-        <a href="{% url 'settings' %}" class="text-slate-600 hover:text-slate-900">Settings</a>
+        <a href="{% url 'provider_index' %}" class="{% if request.resolver_match.url_name == 'provider_index' or request.resolver_match.url_name == 'provider_detail' %}text-indigo-600{% else %}text-slate-600 hover:text-slate-900{% endif %}">Providers</a>
+        <a href="{% url 'sessions' %}" class="{% if request.resolver_match.url_name == 'sessions' or request.resolver_match.url_name == 'session_detail' %}text-indigo-600{% else %}text-slate-600 hover:text-slate-900{% endif %}">Sessions</a>
+        <a href="{% url 'extensions' %}" class="{% if request.resolver_match.url_name == 'extensions' %}text-indigo-600{% else %}text-slate-600 hover:text-slate-900{% endif %}">Extensions</a>
+        <a href="{% url 'settings' %}" class="{% if request.resolver_match.url_name == 'settings' %}text-indigo-600{% else %}text-slate-600 hover:text-slate-900{% endif %}">Settings</a>
       </nav>
     </div>
   </header>

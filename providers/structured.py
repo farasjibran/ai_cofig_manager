@@ -60,6 +60,7 @@ def build_context(provider: Provider, text: str) -> dict[str, Any]:
         "env_rows": [],
         "qwen_rows": [],
         "opencode_providers_json": "[]",
+        "pi_models_json": "[]",
         "claude_allow": [],
         "claude_deny": [],
         "claude_hooks_json": "{}",
@@ -70,6 +71,7 @@ def build_context(provider: Provider, text: str) -> dict[str, Any]:
             or schema.has_env_editor
             or schema.has_qwen_model_providers
             or schema.has_opencode_providers
+            or schema.has_pi_models
             or schema.has_claude_permissions
             or schema.has_claude_hooks
         ),
@@ -166,6 +168,31 @@ def build_context(provider: Provider, text: str) -> dict[str, Any]:
                     }
                 )
         ctx["opencode_providers_json"] = json.dumps(out_list, ensure_ascii=False)
+
+    if schema.has_pi_models:
+        providers = data.get("providers") or {}
+        pi_list: list[dict[str, Any]] = []
+        if isinstance(providers, dict):
+            for pid, pdata in providers.items():
+                if not isinstance(pdata, dict):
+                    continue
+                models = pdata.get("models") or []
+                model_rows = []
+                if isinstance(models, list):
+                    for mdata in models:
+                        if isinstance(mdata, dict):
+                            model_rows.append({
+                                "id": str(mdata.get("id", "")),
+                                "name": str(mdata.get("name", ""))
+                            })
+                pi_list.append({
+                    "id": pid,
+                    "name": str(pdata.get("name", "")),
+                    "apiKey": str(pdata.get("apiKey", "")),
+                    "baseUrl": str(pdata.get("baseUrl", "")),
+                    "models": model_rows,
+                })
+        ctx["pi_models_json"] = json.dumps(pi_list, ensure_ascii=False)
 
     if schema.has_claude_permissions:
         perms = data.get("permissions") or {}
@@ -344,7 +371,77 @@ def apply_post(provider: Provider, current_text: str, post) -> tuple[bool, str, 
         else:
             data.pop("provider", None)
 
-    # 5) Claude permissions allow/deny
+    # 5) Pi models (similar to OpenCode but simpler structure)
+    if schema.has_pi_models:
+        payload = post.get("pi_models_json", "[]")
+        try:
+            providers_list = json.loads(payload) if payload else []
+        except json.JSONDecodeError as exc:
+            return False, f"Invalid Pi models JSON payload: {exc}", current_text
+        if not isinstance(providers_list, list):
+            return False, "Pi models payload must be a list.", current_text
+
+        existing_root = data.get("providers")
+        if not isinstance(existing_root, dict):
+            existing_root = {}
+
+        new_root: dict[str, dict] = {}
+        for entry in providers_list:
+            if not isinstance(entry, dict):
+                continue
+            pid = str(entry.get("id", "")).strip()
+            if not pid:
+                continue
+
+            existing = existing_root.get(pid) if isinstance(existing_root.get(pid), dict) else {}
+            merged: dict[str, Any] = dict(existing)
+
+            name = str(entry.get("name", "")).strip()
+            api_key = str(entry.get("apiKey", "")).strip()
+            base_url = str(entry.get("baseUrl", "")).strip()
+            models = entry.get("models") or []
+            if not isinstance(models, list):
+                models = []
+
+            if name:
+                merged["name"] = name
+            else:
+                merged.pop("name", None)
+            if api_key:
+                merged["apiKey"] = api_key
+            else:
+                merged.pop("apiKey", None)
+            if base_url:
+                merged["baseUrl"] = base_url
+            else:
+                merged.pop("baseUrl", None)
+
+            new_models: list[dict] = []
+            for m in models:
+                if not isinstance(m, dict):
+                    continue
+                mid = str(m.get("id", "")).strip()
+                mname = str(m.get("name", "")).strip()
+                if not mid:
+                    continue
+                model_entry = {"id": mid}
+                if mname:
+                    model_entry["name"] = mname
+                new_models.append(model_entry)
+
+            if new_models:
+                merged["models"] = new_models
+            else:
+                merged.pop("models", None)
+
+            new_root[pid] = merged
+
+        if new_root:
+            data["providers"] = new_root
+        else:
+            data.pop("providers", None)
+
+    # 6) Claude permissions allow/deny
     if schema.has_claude_permissions:
         allow = [s.strip() for s in post.getlist("perm_allow") if s.strip()]
         deny = [s.strip() for s in post.getlist("perm_deny") if s.strip()]
