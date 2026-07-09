@@ -26,11 +26,13 @@
   </div>
   <div class="flex flex-col items-end gap-2">
     <a href="{% url 'provider_index' %}" class="text-sm text-slate-600 hover:text-slate-900">← Back</a>
+    {% if provider.key != 'pi' %}
     <button type="button" @click="runTest()" :disabled="testing"
             class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50">
       <span x-show="!testing">Test connection</span>
       <span x-show="testing">Testing…</span>
     </button>
+    {% endif %}
   </div>
 </div>
 
@@ -93,6 +95,10 @@
 </div>
 {% endif %}
 
+{% if provider.key == 'pi' and pi_files %}
+  {# Pi Coding Agent multi-file tabs #}
+  {% include "providers/_pi_tabs.html" %}
+{% else %}
 <div x-data="{ tab: '{% if structured.has_structured and not structured.parse_error %}structured{% else %}raw{% endif %}' }"
      class="space-y-6">
 
@@ -501,5 +507,183 @@
       },
     };
   }
+
+  function piModels(opts) {
+    return {
+      items: opts.initial || [],
+      addProvider() {
+        this.items.push({
+          id: '',
+          name: '',
+          apiKey: '',
+          baseUrl: '',
+          models: []
+        });
+      }
+    };
+  }
+
+  function opencodeProviders(opts) {
+    return {
+      items: opts.initial || [],
+      addProvider() {
+        this.items.push({
+          id: '',
+          name: '',
+          npm: '',
+          baseUrl: '',
+          authHeader: '',
+          models: []
+        });
+      }
+    };
+  }
+
+  function structuredForm(opts) {
+    return {
+      diffOpen: false,
+      diffHtml: '',
+      diffStatus: '',
+      isSecretKey(key) {
+        const lower = key.toLowerCase();
+        return lower.includes('key') || lower.includes('token') ||
+               lower.includes('secret') || lower.includes('password') ||
+               lower.includes('auth');
+      },
+      addEnvRow(container) {
+        const row = document.createElement('div');
+        row.className = 'flex items-center gap-2';
+        row.setAttribute('x-data', '{ show: true, secret: false }');
+
+        const keyInput = document.createElement('input');
+        keyInput.name = 'env_key';
+        keyInput.placeholder = 'KEY';
+        keyInput.className = 'w-1/3 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono';
+        keyInput.setAttribute('@input', 'secret = isSecretKey($el.value); if (!secret) show = true');
+
+        const valueDiv = document.createElement('div');
+        valueDiv.className = 'grow relative';
+
+        const valueInput = document.createElement('input');
+        valueInput.name = 'env_value';
+        valueInput.placeholder = 'value';
+        valueInput.autocomplete = 'off';
+        valueInput.className = 'w-full rounded-md border-slate-300 bg-white px-2 py-1 pr-12 text-sm font-mono';
+        valueInput.setAttribute(':type', "(secret && !show) ? 'password' : 'text'");
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.type = 'button';
+        toggleBtn.className = 'absolute inset-y-0 right-1 my-auto h-6 rounded-md bg-slate-100 px-2 text-[11px] font-medium text-slate-700 hover:bg-slate-200';
+        toggleBtn.setAttribute('x-show', 'secret');
+        toggleBtn.setAttribute('@click', 'show = !show');
+        toggleBtn.setAttribute('x-text', "show ? 'Hide' : 'Show'");
+
+        valueDiv.appendChild(valueInput);
+        valueDiv.appendChild(toggleBtn);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'rounded-md border border-rose-200 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-50';
+        removeBtn.textContent = '×';
+        removeBtn.addEventListener('click', (e) => {
+          e.target.closest('div[x-data]').remove();
+        });
+
+        row.appendChild(keyInput);
+        row.appendChild(valueDiv);
+        row.appendChild(removeBtn);
+        container.appendChild(row);
+      },
+      removeEnvRow(event) {
+        event.target.closest('div').remove();
+      },
+      addQwenRow(container) {
+        const row = document.createElement('div');
+        row.className = 'grid grid-cols-12 items-center gap-2';
+
+        const inputs = [
+          { name: 'mp_id', placeholder: 'id', cols: 3 },
+          { name: 'mp_name', placeholder: 'name', cols: 3 },
+          { name: 'mp_baseUrl', placeholder: 'baseUrl', cols: 4 },
+          { name: 'mp_envKey', placeholder: 'envKey', cols: 1 }
+        ];
+
+        inputs.forEach(inp => {
+          const input = document.createElement('input');
+          input.name = inp.name;
+          input.placeholder = inp.placeholder;
+          input.className = `col-span-${inp.cols} rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono`;
+          row.appendChild(input);
+        });
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'col-span-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-50';
+        removeBtn.textContent = '×';
+        removeBtn.addEventListener('click', (e) => e.target.closest('div').remove());
+
+        row.appendChild(removeBtn);
+        container.appendChild(row);
+      },
+      addRow(container, names, placeholders) {
+        const row = document.createElement('div');
+        row.className = 'flex items-center gap-2';
+
+        const input = document.createElement('input');
+        input.name = names[0];
+        input.placeholder = placeholders[0];
+        input.className = 'grow rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono';
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'rounded-md border border-rose-200 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-50';
+        removeBtn.textContent = '×';
+        removeBtn.addEventListener('click', (e) => e.target.closest('div').remove());
+
+        row.appendChild(input);
+        row.appendChild(removeBtn);
+        container.appendChild(row);
+      },
+      async previewDiff() {
+        const fd = new FormData(this.$el);
+        try {
+          const res = await fetch(opts.diffUrl, {
+            method: 'POST',
+            body: fd,
+            headers: { 'X-CSRFToken': opts.csrf }
+          });
+          const data = await res.json();
+          if (data.unchanged) {
+            this.diffStatus = 'No changes';
+            this.diffHtml = '<span class="text-slate-400">No changes vs disk.</span>';
+          } else {
+            this.diffStatus = 'Changes detected';
+            this.diffHtml = this._colorize(data.diff);
+          }
+          this.diffOpen = true;
+        } catch (err) {
+          this.diffStatus = 'request failed';
+          this.diffHtml = '';
+          this.diffOpen = true;
+        }
+      },
+      _colorize(text) {
+        const esc = (s) => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+        return text.split('\n').map(line => {
+          const e = esc(line);
+          if (line.startsWith('+++') || line.startsWith('---'))
+            return `<span class="text-slate-400">${e}</span>`;
+          if (line.startsWith('@@'))
+            return `<span class="text-sky-300">${e}</span>`;
+          if (line.startsWith('+'))
+            return `<span class="text-emerald-300">${e}</span>`;
+          if (line.startsWith('-'))
+            return `<span class="text-rose-300">${e}</span>`;
+          return `<span class="text-slate-300">${e}</span>`;
+        }).join('\n');
+      }
+    };
+  }
 </script>
+{% endif %}
 {% endblock %}
