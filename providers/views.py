@@ -861,6 +861,16 @@ def mcp_view(request, key: str):
     servers = read_mcp_servers(prov)
 
     # Pre-serialize complex fields for template use
+    def _extract_port(srv: "MCPServer") -> str:
+        """Extract port from env values that look like http://host:port."""
+        import re
+        for v in srv.env.values():
+            if isinstance(v, str) and "localhost" in v or ":" in v:
+                m = re.search(r":(\d+)", v)
+                if m:
+                    return m.group(1)
+        return ""
+
     def _server_dict(s):
         return {
             "name": s.name,
@@ -871,6 +881,7 @@ def mcp_view(request, key: str):
             "env_str": "\n".join(f"{k}={v}" for k, v in s.env.items()),
             "cwd": s.cwd,
             "server_type": s.server_type,
+            "port": _extract_port(s),
         }
 
     return render(request, "providers/mcp.html", {
