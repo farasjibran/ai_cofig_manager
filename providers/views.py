@@ -58,6 +58,22 @@ def index(request):
     return render(request, "providers/index.html", {"items": items})
 
 
+def _read_pi_files(base_path):
+    """Read Pi's 3 config files: settings.json, models.json, mcp.json"""
+    pi_files = {}
+    for fname in ["settings.json", "models.json", "mcp.json"]:
+        fpath = base_path.parent / fname
+        key = fname.replace('.json', '')  # Remove .json extension
+        if fpath.exists():
+            try:
+                pi_files[key] = fpath.read_text(encoding="utf-8")
+            except Exception:
+                pi_files[key] = ""
+        else:
+            pi_files[key] = ""
+    return pi_files
+
+
 def detail(request, key: str):
     provider = get_provider(key)
     if provider is None:
@@ -108,6 +124,19 @@ def detail(request, key: str):
     from .mcp import get_mcp_key
     has_mcp = get_mcp_key(key) is not None
 
+    # Pi multi-file support
+    pi_files = {}
+    pi_models_json = "[]"
+    if key == "pi":
+        pi_files = _read_pi_files(provider.path)
+        # Parse models.json for structured UI
+        if pi_files.get("models"):
+            try:
+                models_data = json.loads(pi_files["models"])
+                pi_models_json = json.dumps(models_data, ensure_ascii=False)
+            except Exception:
+                pi_models_json = "{}"
+
     return render(
         request,
         "providers/detail.html",
@@ -122,6 +151,8 @@ def detail(request, key: str):
             "file_sig": file_sig,
             "oauth_status": oauth_status,
             "has_mcp": has_mcp,
+            "pi_files": pi_files,
+            "pi_models_json": pi_models_json,
         },
     )
 
@@ -571,6 +602,49 @@ STARTER_TEMPLATES: dict[str, dict] = {
     "qwenpaw": {
         "providers": [],
     },
+    "pi": {
+        "lastChangelogVersion": "0.80.3",
+        "theme": "dark",
+        "quietStartup": False,
+        "enableInstallTelemetry": False,
+        "defaultProvider": "anthropic",
+        "defaultModel": "claude-sonnet-4",
+        "packages": [
+            "npm:context-mode",
+            "npm:pi-subagents",
+            "npm:pi-web-access",
+            "npm:pi-mcp-adapter",
+        ],
+        "terminal": {
+            "showTerminalProgress": True
+        },
+        "hideThinkingBlock": False,
+        "defaultProjectTrust": "ask",
+        "defaultThinkingLevel": "medium"
+    },
+    "pi-models": {
+        "providers": {
+            "anthropic": {
+                "baseUrl": "https://api.anthropic.com/v1",
+                "api": "openai-completions",
+                "apiKey": "sk-...",
+                "models": [
+                    {
+                        "id": "claude-sonnet-4",
+                        "name": "Claude Sonnet 4"
+                    }
+                ]
+            }
+        }
+    },
+    "pi-mcp": {
+        "mcpServers": {
+            "context-mode": {
+                "command": "context-mode",
+                "directTools": True
+            }
+        }
+    },
 }
 
 
@@ -960,3 +1034,46 @@ def mcp_save(request, key: str):
         messages.success(request, f"MCP server '{name}' deleted.")
 
     return redirect("provider_mcp", key=key)
+
+
+@require_POST
+def pi_save_file(request, key: str):
+    """Save Pi multi-file (settings.json, models.json, mcp.json)."""
+    from django.views.decorators.http import require_POST
+
+    provider = get_provider(key)
+    if provider is None or key != "pi":
+        return JsonResponse({"ok": False, "message": "Invalid provider"})
+
+    file_type = request.POST.get("file_type", "").strip()
+    content = request.POST.get("content", "")
+
+    if file_type not in ["settings", "models", "mcp"]:
+        return JsonResponse({"ok": False, "message": "Invalid file type"})
+
+    filename = f"{file_type}.json"
+    file_path = provider.path.parent / filename
+
+    # Validate JSON
+    try:
+        import json
+        json.loads(content)
+    except Exception as e:
+        return JsonResponse({"ok": False, "message": f"Invalid JSON: {str(e)}"})
+
+    # Create backup
+    if file_path.exists():
+        from datetime import datetime
+        backup_name = f"{filename}.bak.{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        backup_path = file_path.parent / backup_name
+        try:
+            backup_path.write_text(file_path.read_text(encoding="utf-8"), encoding="utf-8")
+        except Exception:
+            pass
+
+    # Write file
+    try:
+        file_path.write_text(content, encoding="utf-8")
+        return JsonResponse({"ok": True, "message": f"{filename} saved successfully"})
+    except Exception as e:
+        return JsonResponse({"ok": False, "message": f"Failed to write file: {str(e)}"})
