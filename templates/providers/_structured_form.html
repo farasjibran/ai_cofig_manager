@@ -164,6 +164,62 @@
   </div>
   {% endif %}
 
+  {% if structured.schema.has_pi_models %}
+  <div class="px-4 py-4" x-data='piModels({ initial: {{ structured.pi_models_json|safe }} })'>
+    <div class="mb-2 flex items-center justify-between">
+      <h3 class="text-sm font-semibold text-slate-800">Model Providers</h3>
+      <button type="button" @click="addProvider()"
+              class="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50">+ Add provider</button>
+    </div>
+    <input type="hidden" name="pi_models_json" :value="JSON.stringify(items)" />
+    <div class="space-y-3">
+      <template x-for="(p, idx) in items" :key="idx">
+        <div class="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <div class="grid grid-cols-12 items-center gap-2">
+            <input x-model="p.id" placeholder="provider id (e.g. anthropic)"
+                   class="col-span-3 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+            <input x-model="p.name" placeholder="display name"
+                   class="col-span-3 rounded-md border-slate-300 bg-white px-2 py-1 text-sm" />
+            <input x-model="p.baseUrl" placeholder="base URL"
+                   class="col-span-5 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+            <button type="button" @click="items.splice(idx,1)"
+                    class="col-span-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-50">×</button>
+          </div>
+          <div class="mt-2 grid grid-cols-1 gap-2">
+            <div class="relative" x-data="{ show: false }">
+              <input :type="show ? 'text' : 'password'" x-model="p.apiKey"
+                     placeholder="API Key" autocomplete="off"
+                     class="w-full rounded-md border-slate-300 bg-white px-2 py-1 pr-12 text-sm font-mono" />
+              <button type="button" @click="show = !show"
+                      class="absolute inset-y-0 right-1 my-auto h-6 rounded-md bg-slate-100 px-2 text-[11px] font-medium text-slate-700 hover:bg-slate-200"
+                      x-text="show ? 'Hide' : 'Show'"></button>
+            </div>
+          </div>
+          <div class="mt-3">
+            <div class="mb-1 flex items-center justify-between">
+              <span class="text-xs font-medium text-slate-600">Models</span>
+              <button type="button" @click="p.models.push({id:'',name:''})"
+                      class="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-xs hover:bg-slate-50">+ Add model</button>
+            </div>
+            <div class="space-y-1">
+              <template x-for="(m, mi) in p.models" :key="mi">
+                <div class="grid grid-cols-12 items-center gap-2">
+                  <input x-model="m.id" placeholder="model id"
+                         class="col-span-5 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+                  <input x-model="m.name" placeholder="model display name"
+                         class="col-span-6 rounded-md border-slate-300 bg-white px-2 py-1 text-sm" />
+                  <button type="button" @click="p.models.splice(mi,1)"
+                          class="col-span-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-50">×</button>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+  {% endif %}
+
   {% if structured.schema.has_claude_permissions %}
   <div class="px-4 py-4">
     <h3 class="mb-3 text-sm font-semibold text-slate-800">Permissions</h3>
