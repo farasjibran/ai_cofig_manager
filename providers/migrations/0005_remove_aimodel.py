@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('providers', '0004_aimodel_tokencheck'),
+        ('providers', '0003_oauthconfig'),
     ]
 
     operations = [
