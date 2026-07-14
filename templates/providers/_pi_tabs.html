@@ -40,7 +40,7 @@
         </button>
       </div>
       <div class="p-4">
-        <textarea x-model="content.settings" class="w-full h-96 font-mono text-xs border border-slate-200 rounded p-2"></textarea>
+        <textarea x-model="content.settings" class="mt-1 w-full h-96 rounded-md border-slate-300 bg-white px-2 py-1.5 font-mono text-xs shadow-sm"></textarea>
       </div>
     </form>
   </div>
@@ -72,22 +72,22 @@
               <div class="rounded-md border border-slate-200 bg-slate-50 p-3">
                 <div class="grid grid-cols-12 items-center gap-2">
                   <input x-model="p.id" placeholder="provider id (e.g. 9router-aws)"
-                         class="col-span-3 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
-                  <select x-model="p.api" class="col-span-2 rounded-md border-slate-300 bg-white px-2 py-1 text-sm">
+                         class="mt-1 col-span-3 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
+                  <select x-model="p.api" class="mt-1 col-span-2 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm shadow-sm">
                     <option value="openai-completions">openai-completions</option>
                     <option value="anthropic">anthropic</option>
                     <option value="openai">openai</option>
                   </select>
                   <input x-model="p.baseUrl" placeholder="base URL"
-                         class="col-span-6 rounded-md border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+                         class="mt-1 col-span-6 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
                   <button type="button" @click="items.splice(idx,1)"
-                          class="col-span-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-50">×</button>
+                          class="col-span-1 rounded-md border border-rose-200 bg-white px-2 py-1.5 text-xs text-rose-700 hover:bg-rose-50">×</button>
                 </div>
                 <div class="mt-2 grid grid-cols-1 gap-2">
                   <div class="relative" x-data="{ show: false }">
                     <input :type="show ? 'text' : 'password'" x-model="p.apiKey"
                            placeholder="API Key" autocomplete="off"
-                           class="w-full rounded-md border-slate-300 bg-white px-2 py-1 pr-12 text-sm font-mono" />
+                           class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 pr-12 text-sm font-mono shadow-sm" />
                     <button type="button" @click="show = !show"
                             class="absolute inset-y-0 right-1 my-auto h-6 rounded-md bg-slate-100 px-2 text-[11px] font-medium text-slate-700 hover:bg-slate-200"
                             x-text="show ? 'Hide' : 'Show'"></button>
@@ -104,11 +104,11 @@
                       <div class="rounded-md border border-slate-300 bg-white p-3">
                         <div class="grid grid-cols-12 items-center gap-2 mb-2">
                           <input x-model="m.id" placeholder="model id (e.g. kr/claude-haiku-4.5)"
-                                 class="col-span-5 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+                                 class="mt-1 col-span-5 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
                           <input x-model="m.name" placeholder="display name"
-                                 class="col-span-6 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm" />
+                                 class="mt-1 col-span-6 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm shadow-sm" />
                           <button type="button" @click="p.models.splice(mi,1)"
-                                  class="col-span-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs text-rose-700 hover:bg-rose-50">×</button>
+                                  class="col-span-1 rounded-md border border-rose-200 bg-white px-2 py-1.5 text-xs text-rose-700 hover:bg-rose-50">×</button>
                         </div>
                         <div class="grid grid-cols-3 gap-2 mb-2">
                           <label class="flex items-center gap-1 text-xs">
@@ -118,12 +118,12 @@
                           <div>
                             <label class="block text-xs text-slate-600 mb-0.5">Context Window</label>
                             <input type="number" x-model="m.contextWindow" placeholder="200000"
-                                   class="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+                                   class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
                           </div>
                           <div>
                             <label class="block text-xs text-slate-600 mb-0.5">Max Tokens</label>
                             <input type="number" x-model="m.maxTokens" placeholder="64000"
-                                   class="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+                                   class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
                           </div>
                         </div>
                         <div class="mb-2">
@@ -147,22 +147,22 @@
                           <div>
                             <label class="block text-xs text-slate-600 mb-0.5">Input ($/1M)</label>
                             <input type="number" step="0.01" x-model="m.cost.input" placeholder="1.0"
-                                   class="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+                                   class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
                           </div>
                           <div>
                             <label class="block text-xs text-slate-600 mb-0.5">Output ($/1M)</label>
                             <input type="number" step="0.01" x-model="m.cost.output" placeholder="5.0"
-                                   class="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+                                   class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
                           </div>
                           <div>
                             <label class="block text-xs text-slate-600 mb-0.5">Cache Read ($/1M)</label>
                             <input type="number" step="0.01" x-model="m.cost.cacheRead" placeholder="0.1"
-                                   class="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+                                   class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
                           </div>
                           <div>
                             <label class="block text-xs text-slate-600 mb-0.5">Cache Write ($/1M)</label>
                             <input type="number" step="0.01" x-model="m.cost.cacheWrite" placeholder="1.25"
-                                   class="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm font-mono" />
+                                   class="mt-1 w-full rounded-md border-slate-300 bg-white px-2 py-1.5 text-sm font-mono shadow-sm" />
                           </div>
                         </div>
                       </div>
@@ -193,7 +193,7 @@
         </button>
       </div>
       <div class="p-4">
-        <textarea x-model="content.mcp" class="w-full h-96 font-mono text-xs border border-slate-200 rounded p-2"></textarea>
+        <textarea x-model="content.mcp" class="mt-1 w-full h-96 rounded-md border-slate-300 bg-white px-2 py-1.5 font-mono text-xs shadow-sm"></textarea>
       </div>
     </form>
   </div>
